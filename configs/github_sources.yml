@@ -1,0 +1,25 @@
+# ABOUTME: Configuration for GitHub raw file sources.
+# ABOUTME: Maps data types to their raw GitHub URLs.
+
+base_url: "https://raw.githubusercontent.com/Skeli789/Dynamic-Pokemon-Expansion/Unbound/src"
+
+sources:
+  pokemon:
+    file: "Base_Stats.c"
+    description: "Pokemon base stats, types, abilities"
+    parser: "base_stats"
+
+  learnsets:
+    file: "Learnsets.c"
+    description: "Level-up move learnsets"
+    parser: "learnsets"
+
+  egg_moves:
+    file: "Egg_Moves.c"
+    description: "Egg moves for breeding"
+    parser: "egg_moves"
+
+  pokedex:
+    file: "Pokedex_Data_Table.c"
+    description: "Pokedex entries with names, height, weight"
+    parser: "pokedex"

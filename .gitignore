@@ -63,3 +63,8 @@ venv.bak/
 
 # Project specific
 odc-report
+
+# Data directories (generated/downloaded)
+data/raw/exports/
+data/curated/
+data/db/

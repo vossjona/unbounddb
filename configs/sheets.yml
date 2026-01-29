@@ -1,0 +1,15 @@
+# ABOUTME: Configuration for Google Sheets data sources.
+# ABOUTME: Maps tab names to their GIDs for CSV export URLs.
+
+spreadsheet_id: "1Ha06sD9mKw5yXXT2icVZjVQapcArU5C5gLEvA-hkq9o"
+
+tabs:
+  pokemon:
+    gid: "PLACEHOLDER"
+    description: "Pokemon with stats and types"
+  moves:
+    gid: "PLACEHOLDER"
+    description: "Move data"
+  learnsets:
+    gid: "PLACEHOLDER"
+    description: "Which Pokemon learns which move"
