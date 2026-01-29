@@ -1,0 +1,61 @@
+line-length = 120
+target-version = "py311"
+fix = false
+
+[format]
+docstring-code-format = true
+indent-style = "space"
+quote-style = "double"
+
+[lint]
+select = [
+  # pyflakes
+  "F",
+  # pycodestyle erros
+  "E",
+  # pycodestyle warnings
+  "W",
+  # flake8-bugbear
+  "B",
+  # mccabe
+  "C90",
+  # comprehensions
+  "C4",
+  # Ruff-specific rules
+  "RUF",
+  # flake8-bandit
+  "S",
+  # pyupgrade
+  "UP",
+  # pylint
+  "PL",
+  # isort
+  "I",
+  # flake8-async
+  "ASYNC",
+  # tidy imports
+  "TID",
+  # type-checking imports
+  "TCH",
+  # Perflint
+  "PERF",
+  # flake8-logging-format
+  "G",
+  # flake8-use-pathlib
+  "PTH",
+  # flake8-simplify
+  "SIM",
+]
+
+[lint.isort]
+known-first-party = ["unbounddb"]
+
+[lint.pylint]
+max-args = 6
+
+[lint.per-file-ignores]
+"tests/**/*.py" = [
+  "S101", # asserts allowed in tests...
+  "PLR6301", # method could be a function, class method, or static method
+  "PLR2004", # magic value used in comparison, consider replacing `<value>` with a constant variable
+]

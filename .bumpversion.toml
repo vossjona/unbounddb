@@ -1,0 +1,54 @@
+[tool.bumpversion]
+current_version = "0.1.0"
+parse = """(?x)
+    (?P<major>0|[1-9]\\d*)\\.
+    (?P<minor>0|[1-9]\\d*)\\.
+    (?P<patch>0|[1-9]\\d*)
+    (?:
+        .                             # dot separator for pre-release section
+        (?P<release>[a-zA-Z-]+)       # pre-release label
+        (?P<build>0|[1-9]\\d*)        # pre-release version number
+    )?                                # pre-release section is optional
+"""
+serialize = [
+    "{major}.{minor}.{patch}.{release}{build}",
+    "{major}.{minor}.{patch}",
+]
+search = "{current_version}"
+replace = "{new_version}"
+regex = false
+ignore_missing_version = false
+ignore_missing_files = false
+tag = false
+sign_tags = false
+tag_name = "v{new_version}"
+tag_message = "Bump version: {current_version} → {new_version}"
+allow_dirty = false
+commit = false
+message = "Bump version: {current_version} → {new_version}"
+commit_args = ""
+
+[tool.bumpversion.parts.release]
+values = ["dev", "prod"]
+first_value = "dev"
+optional_value = "prod"
+
+[[tool.bumpversion.files]]
+filename = "unbounddb/__init__.py"
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = 'version = "{current_version}"'
+replace = 'version = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = 'README.md'
+search = 'version-{current_version}-blue.svg'
+replace = 'version-{new_version}-blue.svg'
+
+[[tool.bumpversion.files]]
+filename = 'Dockerfile'
+search = 'org.opencontainers.image.version="{current_version}"'
+replace = 'org.opencontainers.image.version="{new_version}"'
+
+

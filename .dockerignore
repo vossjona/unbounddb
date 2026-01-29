@@ -1,0 +1,6 @@
+**
+!unbounddb
+!tests
+!pyproject.toml
+!uv.lock
+!README.md

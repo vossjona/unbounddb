@@ -1,0 +1,106 @@
+# pre-commit hooks (see: https://pre-commit.com/)
+fail_fast: true
+minimum_pre_commit_version: 4.3.0
+default_install_hook_types: [pre-commit, commit-msg]
+
+repos:
+  - repo: meta
+    hooks:
+      - id: identity
+        name: Print input to the static check hooks for troubleshooting
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+        name: Makes sure files end in a newline or ends with one newline if empty
+      - id: trailing-whitespace
+        name: Trims trailing whitespace at the end of a line
+      - id: check-json
+        name: Loads json files to verify content
+      - id: check-yaml
+        name: Loads yaml files to verify content
+      - id: check-toml
+        name: Loads toml files to verify content
+      - id: check-merge-conflict
+        name: Check that merge conflicts are not being committed
+      - id: debug-statements
+        name: Check if there are any debug statements, e.g. breakpoint()
+      - id: check-ast
+        name: Check if valid Python ast
+      - id: check-executables-have-shebangs
+        name: Check that executables have shebang
+      - id: check-shebang-scripts-are-executable
+        name: Check that executables are executable
+
+  # Local hooks (they use the currently activated virtual environment, so dev dependencies have to be installed)
+  - repo: local
+    hooks:
+      - id: lint
+        name: Run ruff for code style checks
+        entry: uv run ruff check
+        args:
+          - --fix   # automatically fix code smells
+          - --exit-non-zero-on-fix
+        language: system
+        types:
+          - python
+        stages: [ pre-commit ]
+        require_serial: true
+
+      - id: format
+        name: Run ruff for automatic code formatting
+        entry: uv run ruff format
+        args:
+          - --exit-non-zero-on-fix
+        language: system
+        types:
+          - python
+        stages: [ pre-commit ]
+        require_serial: true
+
+      - id: mypy
+        name: Run mypy for typing checks
+        entry: uv run mypy             # the script/command to execute
+        language: system        # use the currently activated environment
+        types:
+          - python              # only check python related files
+        require_serial: true    # do not run in parallel
+        stages: [ pre-commit ]
+        files: ^unbounddb/
+
+      - id: uv-lock
+        name: uv-lock
+        entry: uv lock
+        language: system
+        files: '^pyproject\.toml$'
+        stages: [ pre-commit ]
+        require_serial: true
+        pass_filenames: false
+
+      - id: add-ticket  # add ticket number to commit message based on format and regex
+        name: Add ticket information to commit message
+        language: system
+        stages: [ commit-msg ]
+        entry: |-
+          python -c """
+          import argparse, re, subprocess
+          parser = argparse.ArgumentParser()
+          parser.add_argument('filenames', nargs='+')
+          parser.add_argument('--regex', default=r'[\w]+/[\w]+-[\d]+', type=str)
+          parser.add_argument('--format', default='{ticket}: {commit_msg}', type=str)
+          args = parser.parse_args()
+          with open(args.filenames[0], 'r+') as fd:
+              try:
+                  contents = fd.readlines()
+                  commit_msg = contents[0].rstrip('\r\n')
+                  branch_name = subprocess.check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD']).decode('UTF-8')
+                  ticket = re.findall(args.regex, branch_name)
+                  new_msg = args.format.format(ticket=ticket[0], commit_msg=commit_msg) + '\n'
+                  contents[0] = new_msg
+                  fd.seek(0)
+                  fd.writelines(contents)
+                  fd.truncate()
+              except: # ignore any errors and fail silently
+                  pass
+          """

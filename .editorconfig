@@ -1,0 +1,35 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_size = 2
+indent_style = space
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.rst]
+trim_trailing_whitespace = false
+
+[*.{md,markdown}]
+indent_style = tab
+indent_size = 4
+insert_final_newline = false
+trim_trailing_whitespace = false
+
+[*.{js,tsx,ts,jsx,json,xml}]
+indent_style = tab
+
+[{Makefile,*.mk}]
+indent_style = tab
+indent_size = 4
+
+[*.{py,ipynb}]
+indent_size = 4
+
+[*.{cfg,ini,in,sh}]
+indent_size = 4
+
+[{Jenkinsfile,Dockerfile,*.Jenkinsfile}]
+indent_style = tab
+indent_size = 4

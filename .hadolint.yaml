@@ -1,0 +1,5 @@
+failure-threshold: none
+format: tty
+trustedRegistries:
+  - "dockerregistry.mgm-tp.com"
+  - "*.dockerregistry.mgm-tp.com"

@@ -1,0 +1,39 @@
+# based on https://docs.python.org/3/library/logging.config.html#logging-config-dictschema
+
+# version - to be set to an integer value representing the schema version. The only valid value at present is 1
+version: 1
+
+# whether any existing non-root loggers are to be disabled
+disable_existing_loggers: false
+
+# formatters - the corresponding value will be a dict in which each key is a formatter id and each value is a dict
+# describing how to configure the corresponding Formatter instance.
+formatters:
+  # formatter id
+  base:
+    format: "[%(levelname)s %(asctime)s] %(name)s - %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+
+# handlers - the corresponding value will be a dict in which each key is a handler id and each value is a dict
+# describing how to configure the corresponding Handler instance.
+handlers:
+
+  # handler id
+  console:
+    # the fully qualified name of the handler class
+    class: logging.StreamHandler
+
+    # level of the handler
+    level: DEBUG
+
+    # id of the formatter for this handler
+    formatter: base
+
+    # stream: specific for StreamHandlers
+    stream: ext://sys.stdout
+
+# root - root logger settings (this logger will also receive logs from underlying libraries)
+root:
+  level: DEBUG
+  handlers:
+    - console
