@@ -178,8 +178,14 @@ async def fetch_github_file(
         output_dir = settings.raw_github_dir
 
     source = config["sources"][source_name]
-    filename = source["file"]
-    url = f"{config['base_url']}/{filename}"
+
+    # Support either full 'url' or relative 'file' + base_url
+    if "url" in source:
+        url = source["url"]
+        filename = Path(url).name
+    else:
+        filename = source["file"]
+        url = f"{config['base_url']}/{filename}"
 
     output_path = output_dir / filename
 

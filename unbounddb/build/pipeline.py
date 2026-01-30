@@ -1,0 +1,231 @@
+"""ABOUTME: Build pipeline orchestration for CSV to DuckDB transformation.
+ABOUTME: Coordinates reading CSVs, transforming to Parquet, and loading to database."""
+
+from collections.abc import Callable
+from pathlib import Path
+
+import polars as pl
+
+from unbounddb.build.database import create_database, create_indexes, load_parquet_to_table
+from unbounddb.build.normalize import slugify
+from unbounddb.build.transformers import get_transformer
+from unbounddb.config import load_sheets_config
+from unbounddb.ingestion.c_parser import (
+    parse_base_stats_file,
+    parse_learnsets_file,
+    parse_moves_info_file,
+)
+from unbounddb.settings import settings
+
+LogFunc = Callable[[str], None]
+
+
+def _parse_pokemon(source_dir: Path, curated_dir: Path, log: LogFunc) -> tuple[str, Path] | None:
+    """Parse Base_Stats.c to pokemon parquet."""
+    base_stats_path = source_dir / "Base_Stats.c"
+    if not base_stats_path.exists():
+        log(f"Warning: Base_Stats.c not found at {base_stats_path}")
+        return None
+
+    log("Parsing Base_Stats.c...")
+    df = parse_base_stats_file(base_stats_path)
+    df = df.with_columns(pl.col("name").map_elements(slugify, return_dtype=pl.String).alias("pokemon_key"))
+
+    parquet_path = curated_dir / "pokemon.parquet"
+    df.write_parquet(parquet_path)
+    log(f"  -> {parquet_path} ({len(df)} rows)")
+    return ("pokemon", parquet_path)
+
+
+def _parse_learnsets(source_dir: Path, curated_dir: Path, log: LogFunc) -> tuple[str, Path] | None:
+    """Parse Learnsets.c to learnsets parquet."""
+    learnsets_path = source_dir / "Learnsets.c"
+    if not learnsets_path.exists():
+        log(f"Warning: Learnsets.c not found at {learnsets_path}")
+        return None
+
+    log("Parsing Learnsets.c...")
+    df = parse_learnsets_file(learnsets_path)
+    df = df.with_columns(
+        [
+            pl.col("pokemon").map_elements(slugify, return_dtype=pl.String).alias("pokemon_key"),
+            pl.col("move").map_elements(slugify, return_dtype=pl.String).alias("move_key"),
+        ]
+    )
+
+    parquet_path = curated_dir / "learnsets.parquet"
+    df.write_parquet(parquet_path)
+    log(f"  -> {parquet_path} ({len(df)} rows)")
+    return ("learnsets", parquet_path)
+
+
+def _parse_moves(
+    source_dir: Path,
+    curated_dir: Path,
+    learnsets_parquet: Path | None,
+    log: LogFunc,
+) -> tuple[str, Path] | None:
+    """Parse moves_info.h to moves parquet, or extract from learnsets as fallback."""
+    moves_info_path = source_dir / "moves_info.h"
+    if moves_info_path.exists():
+        log("Parsing moves_info.h...")
+        df = parse_moves_info_file(moves_info_path)
+        df = df.with_columns(pl.col("name").map_elements(slugify, return_dtype=pl.String).alias("move_key"))
+
+        parquet_path = curated_dir / "moves.parquet"
+        df.write_parquet(parquet_path)
+        log(f"  -> {parquet_path} ({len(df)} rows)")
+        return ("moves", parquet_path)
+
+    if learnsets_parquet is not None:
+        log("Extracting moves table from learnsets (moves_info.h not found)...")
+        learnsets_df = pl.read_parquet(learnsets_parquet)
+        moves_df = learnsets_df.select(["move", "move_key"]).unique().sort("move")
+
+        parquet_path = curated_dir / "moves.parquet"
+        moves_df.write_parquet(parquet_path)
+        log(f"  -> {parquet_path} ({len(moves_df)} rows)")
+        return ("moves", parquet_path)
+
+    return None
+
+
+def run_build_pipeline(
+    source_dir: Path | None = None,
+    curated_dir: Path | None = None,
+    db_path: Path | None = None,
+    verbose_callback: Callable[[str], None] | None = None,
+) -> Path:
+    """Run the full build pipeline: CSV -> Parquet -> DuckDB.
+
+    Args:
+        source_dir: Directory containing source CSV files.
+        curated_dir: Directory for output Parquet files.
+        db_path: Path for the DuckDB database.
+        verbose_callback: Optional callback for progress messages.
+
+    Returns:
+        Path to the created database.
+    """
+    if source_dir is None:
+        source_dir = settings.raw_exports_dir
+
+    if curated_dir is None:
+        curated_dir = settings.curated_dir
+
+    if db_path is None:
+        db_path = settings.db_path
+
+    def log(msg: str) -> None:
+        if verbose_callback:
+            verbose_callback(msg)
+
+    # Get configured tabs
+    config = load_sheets_config()
+    tab_names = config.get_tab_names()
+
+    # Ensure output directories exist
+    curated_dir.mkdir(parents=True, exist_ok=True)
+
+    # Transform CSVs to Parquet
+    parquet_files: dict[str, Path] = {}
+
+    for tab_name in tab_names:
+        csv_path = source_dir / f"{tab_name}.csv"
+
+        if not csv_path.exists():
+            log(f"Skipping {tab_name}: CSV not found at {csv_path}")
+            continue
+
+        log(f"Transforming {tab_name}...")
+
+        transformer = get_transformer(tab_name)
+        df = transformer(csv_path)
+
+        parquet_path = curated_dir / f"{tab_name}.parquet"
+        df.write_parquet(parquet_path)
+        parquet_files[tab_name] = parquet_path
+
+        log(f"  -> {parquet_path} ({len(df)} rows)")
+
+    if not parquet_files:
+        raise ValueError(f"No CSV files found in {source_dir}")
+
+    # Create database and load Parquet files
+    log(f"Creating database at {db_path}...")
+    conn = create_database(db_path)
+
+    for table_name, parquet_path in parquet_files.items():
+        log(f"Loading {table_name} into database...")
+        load_parquet_to_table(conn, parquet_path, table_name)
+
+    # Create indexes
+    log("Creating indexes...")
+    create_indexes(conn)
+
+    conn.close()
+    log(f"Build complete: {db_path}")
+
+    return db_path
+
+
+def _load_parquets_to_db(parquet_files: dict[str, Path], db_path: Path, log: LogFunc) -> None:
+    """Create database and load all parquet files."""
+    log(f"Creating database at {db_path}...")
+    conn = create_database(db_path)
+
+    for table_name, parquet_path in parquet_files.items():
+        log(f"Loading {table_name} into database...")
+        load_parquet_to_table(conn, parquet_path, table_name)
+
+    log("Creating indexes...")
+    create_indexes(conn)
+    conn.close()
+    log(f"Build complete: {db_path}")
+
+
+def run_github_build_pipeline(
+    source_dir: Path | None = None,
+    curated_dir: Path | None = None,
+    db_path: Path | None = None,
+    verbose_callback: Callable[[str], None] | None = None,
+) -> Path:
+    """Run the build pipeline from GitHub C source files.
+
+    Args:
+        source_dir: Directory containing source C files.
+        curated_dir: Directory for output Parquet files.
+        db_path: Path for the DuckDB database.
+        verbose_callback: Optional callback for progress messages.
+
+    Returns:
+        Path to the created database.
+    """
+    source_dir = source_dir or settings.raw_github_dir
+    curated_dir = curated_dir or settings.curated_dir
+    db_path = db_path or settings.db_path
+
+    def log(msg: str) -> None:
+        if verbose_callback:
+            verbose_callback(msg)
+
+    curated_dir.mkdir(parents=True, exist_ok=True)
+    parquet_files: dict[str, Path] = {}
+
+    # Parse source files
+    if result := _parse_pokemon(source_dir, curated_dir, log):
+        parquet_files[result[0]] = result[1]
+
+    learnsets_path = None
+    if result := _parse_learnsets(source_dir, curated_dir, log):
+        parquet_files[result[0]] = result[1]
+        learnsets_path = result[1]
+
+    if result := _parse_moves(source_dir, curated_dir, learnsets_path, log):
+        parquet_files[result[0]] = result[1]
+
+    if not parquet_files:
+        raise ValueError(f"No C source files found in {source_dir}")
+
+    _load_parquets_to_db(parquet_files, db_path, log)
+    return db_path
