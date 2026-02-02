@@ -1,0 +1,8 @@
+# ABOUTME: Configuration for external data sources (non-GitHub).
+# ABOUTME: Maps source names to URLs for fetching.
+
+sources:
+  trainers:
+    url: "https://pastebin.com/raw/dRj8YnX0"
+    description: "Trainer battles in Showdown/PokePaste format"
+    parser: "showdown"

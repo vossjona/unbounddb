@@ -2,7 +2,7 @@
 
 ## Google Sheets
 
-- **Trainer Battles**: https://docs.google.com/spreadsheets/d/1pLTQKQkWTnSkev4_kcjHbY0AkBujbTUDybxXFNZ_aVY/edit?gid=707456878#gid=707456878
+- **Trainer Battles**: https://pastebin.com/raw/dRj8YnX0
 - **General Information**: https://docs.google.com/spreadsheets/d/1LFSBZuPDtJrwAz7t6ZkJ-il4j8M3qCdaKLNe6EZdPmQ/edit?gid=0#gid=0
 - **Locations**: https://docs.google.com/spreadsheets/d/1PyGm-yrit5Ow6cns2tBA9VEMwLVMzn3YhDRipABjLUM/edit?gid=897380238#gid=897380238
 - **TM Locations**: https://docs.google.com/spreadsheets/d/1CBydbTlO0FSPTUiamzUceNNt7-YkWSGDq69wwrYXosI/edit?gid=0#gid=0

@@ -59,6 +59,56 @@ def _parse_learnsets(source_dir: Path, curated_dir: Path, log: LogFunc) -> tuple
     return ("learnsets", parquet_path)
 
 
+def _parse_trainers(
+    source_dir: Path,
+    curated_dir: Path,
+    log: LogFunc,
+) -> dict[str, Path]:
+    """Parse trainer data into 3 parquet files.
+
+    Args:
+        source_dir: Directory containing trainers.txt file.
+        curated_dir: Directory for output Parquet files.
+        log: Logging callback function.
+
+    Returns:
+        Dict with keys: 'trainers', 'trainer_pokemon', 'trainer_pokemon_moves'.
+        Empty dict if trainers.txt not found.
+    """
+    trainers_path = source_dir / "trainers.txt"
+    if not trainers_path.exists():
+        log(f"Warning: trainers.txt not found at {trainers_path}")
+        return {}
+
+    # Import here to avoid circular import
+    from unbounddb.ingestion.showdown_parser import parse_showdown_file_to_dataframes  # noqa: PLC0415
+
+    log("Parsing trainers.txt...")
+    trainers_df, trainer_pokemon_df, trainer_pokemon_moves_df = parse_showdown_file_to_dataframes(trainers_path)
+
+    results: dict[str, Path] = {}
+
+    # Write trainers
+    trainers_parquet = curated_dir / "trainers.parquet"
+    trainers_df.write_parquet(trainers_parquet)
+    results["trainers"] = trainers_parquet
+    log(f"  -> {trainers_parquet} ({len(trainers_df)} rows)")
+
+    # Write trainer_pokemon
+    trainer_pokemon_parquet = curated_dir / "trainer_pokemon.parquet"
+    trainer_pokemon_df.write_parquet(trainer_pokemon_parquet)
+    results["trainer_pokemon"] = trainer_pokemon_parquet
+    log(f"  -> {trainer_pokemon_parquet} ({len(trainer_pokemon_df)} rows)")
+
+    # Write trainer_pokemon_moves
+    trainer_pokemon_moves_parquet = curated_dir / "trainer_pokemon_moves.parquet"
+    trainer_pokemon_moves_df.write_parquet(trainer_pokemon_moves_parquet)
+    results["trainer_pokemon_moves"] = trainer_pokemon_moves_parquet
+    log(f"  -> {trainer_pokemon_moves_parquet} ({len(trainer_pokemon_moves_df)} rows)")
+
+    return results
+
+
 def _parse_moves(
     source_dir: Path,
     curated_dir: Path,
@@ -224,8 +274,12 @@ def run_github_build_pipeline(
     if result := _parse_moves(source_dir, curated_dir, learnsets_path, log):
         parquet_files[result[0]] = result[1]
 
+    # Parse trainer data
+    trainer_files = _parse_trainers(source_dir, curated_dir, log)
+    parquet_files.update(trainer_files)
+
     if not parquet_files:
-        raise ValueError(f"No C source files found in {source_dir}")
+        raise ValueError(f"No source files found in {source_dir}")
 
     _load_parquets_to_db(parquet_files, db_path, log)
     return db_path

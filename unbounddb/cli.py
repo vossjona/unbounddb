@@ -10,7 +10,12 @@ import typer
 from rich.console import Console
 
 from unbounddb.build import run_build_pipeline, run_github_build_pipeline
-from unbounddb.ingestion import fetch_all_github_sources, fetch_all_tabs, validate_manual_csvs
+from unbounddb.ingestion import (
+    fetch_all_external_sources,
+    fetch_all_github_sources,
+    fetch_all_tabs,
+    validate_manual_csvs,
+)
 from unbounddb.settings import settings
 
 app = typer.Typer(
@@ -42,7 +47,7 @@ def _fetch_manual(verbose: bool) -> None:
 
 
 def _fetch_github(force: bool, verbose: bool) -> None:
-    """Fetch from GitHub."""
+    """Fetch from GitHub and external sources."""
     if verbose:
         suffix = " (force refresh)" if force else ""
         console.print(f"[blue]Fetching C source files to {settings.raw_github_dir}{suffix}[/]")
@@ -51,6 +56,16 @@ def _fetch_github(force: bool, verbose: bool) -> None:
         _print_paths(paths, "Fetched")
     except Exception as e:
         console.print(f"[red]Error fetching data:[/] {e}")
+        raise typer.Exit(1) from None
+
+    # Also fetch external sources (trainer data)
+    if verbose:
+        console.print(f"[blue]Fetching external sources to {settings.raw_github_dir}{suffix}[/]")
+    try:
+        external_paths = asyncio.run(fetch_all_external_sources(force=force))
+        _print_paths(external_paths, "Fetched")
+    except Exception as e:
+        console.print(f"[red]Error fetching external data:[/] {e}")
         raise typer.Exit(1) from None
 
 

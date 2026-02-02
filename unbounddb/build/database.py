@@ -64,6 +64,13 @@ def create_indexes(conn: duckdb.DuckDBPyConnection) -> None:
         if "move_key" in col_names:
             conn.execute(f"CREATE INDEX idx_{table_name}_move_key ON {table_name}(move_key)")
 
+        # Index for trainer foreign keys
+        if "trainer_id" in col_names:
+            conn.execute(f"CREATE INDEX idx_{table_name}_trainer_id ON {table_name}(trainer_id)")
+
+        if "trainer_pokemon_id" in col_names:
+            conn.execute(f"CREATE INDEX idx_{table_name}_trainer_pokemon_id ON {table_name}(trainer_pokemon_id)")
+
 
 def get_connection(db_path: Path) -> duckdb.DuckDBPyConnection:
     """Get a read-only connection to an existing database.

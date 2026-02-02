@@ -12,6 +12,7 @@ from unbounddb.config import SheetsConfig, load_sheets_config
 from unbounddb.settings import settings
 
 GITHUB_SOURCES_CONFIG = settings.project_root / "configs" / "github_sources.yml"
+EXTERNAL_SOURCES_CONFIG = settings.project_root / "configs" / "external_sources.yml"
 
 
 async def fetch_tab(
@@ -235,6 +236,111 @@ async def fetch_all_github_sources(
     async with httpx.AsyncClient(follow_redirects=True, timeout=60.0) as client:
         source_names = list(config["sources"].keys())
         tasks = [fetch_github_file(name, config, output_dir, force, client) for name in source_names]
+        paths = await asyncio.gather(*tasks)
+
+        results = dict(zip(source_names, paths, strict=True))
+
+    return results
+
+
+def load_external_config() -> dict[str, Any]:
+    """Load external sources configuration.
+
+    Returns:
+        Dictionary with sources configuration.
+
+    Raises:
+        FileNotFoundError: If config file doesn't exist.
+    """
+    if not EXTERNAL_SOURCES_CONFIG.exists():
+        raise FileNotFoundError(f"External sources config not found: {EXTERNAL_SOURCES_CONFIG}")
+
+    with EXTERNAL_SOURCES_CONFIG.open() as f:
+        return yaml.safe_load(f)
+
+
+async def fetch_external_file(
+    source_name: str,
+    config: dict[str, Any] | None = None,
+    output_dir: Path | None = None,
+    force: bool = False,
+    client: httpx.AsyncClient | None = None,
+) -> Path:
+    """Fetch a single file from an external URL.
+
+    Args:
+        source_name: Name of the source (e.g., 'trainers').
+        config: External config dict. Loads default if not provided.
+        output_dir: Directory to save the file.
+        force: If True, re-download even if file exists.
+        client: Optional httpx client for connection reuse.
+
+    Returns:
+        Path to the downloaded file.
+
+    Raises:
+        httpx.HTTPStatusError: If download fails.
+        KeyError: If source_name not in config.
+    """
+    if config is None:
+        config = load_external_config()
+
+    if output_dir is None:
+        output_dir = settings.raw_github_dir  # Store in same raw directory
+
+    source = config["sources"][source_name]
+    url = source["url"]
+
+    # Use source name as filename with appropriate extension
+    filename = f"{source_name}.txt"
+    output_path = output_dir / filename
+
+    if output_path.exists() and not force:
+        return output_path
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    should_close_client = client is None
+    if client is None:
+        client = httpx.AsyncClient(follow_redirects=True, timeout=60.0)
+
+    try:
+        response = await client.get(url)
+        response.raise_for_status()
+
+        output_path.write_text(response.text, encoding="utf-8")
+        return output_path
+    finally:
+        if should_close_client:
+            await client.aclose()
+
+
+async def fetch_all_external_sources(
+    config: dict[str, Any] | None = None,
+    output_dir: Path | None = None,
+    force: bool = False,
+) -> dict[str, Path]:
+    """Fetch all configured external source files.
+
+    Args:
+        config: External config dict. Loads default if not provided.
+        output_dir: Directory to save files. Uses settings default if not provided.
+        force: If True, re-download even if files exist.
+
+    Returns:
+        Dictionary mapping source names to their downloaded file paths.
+    """
+    if config is None:
+        config = load_external_config()
+
+    if output_dir is None:
+        output_dir = settings.raw_github_dir
+
+    results: dict[str, Path] = {}
+
+    async with httpx.AsyncClient(follow_redirects=True, timeout=60.0) as client:
+        source_names = list(config["sources"].keys())
+        tasks = [fetch_external_file(name, config, output_dir, force, client) for name in source_names]
         paths = await asyncio.gather(*tasks)
 
         results = dict(zip(source_names, paths, strict=True))

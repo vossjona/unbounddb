@@ -48,7 +48,7 @@ Locations: 897380238
 
 ### Pokemon Glossary
 docs/pokemon_glossary.md
-If you need extra information about any pokemon concept - use web search.
+If you need extra information about any pokemon
 
 ---
 
