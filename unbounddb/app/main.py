@@ -86,14 +86,20 @@ with tab1:
 
 with tab2:
     if tables:
-        selected_table = st.selectbox("Select Table", options=tables)
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            selected_table = st.selectbox("Select Table", options=tables)
+        with col2:
+            show_all = st.checkbox("Show all rows", value=False)
 
         if selected_table:
-            preview = get_table_preview(selected_table)
-            st.subheader(f"{selected_table} ({len(preview)} rows shown)")
+            limit = None if show_all else 100
+            preview = get_table_preview(selected_table, limit=limit)
+            row_label = "all" if show_all else f"{len(preview)} of"
+            st.subheader(f"{selected_table} ({row_label} {len(preview)} rows)")
             st.dataframe(
                 preview.to_pandas(),
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
             )
     else:

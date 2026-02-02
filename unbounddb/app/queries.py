@@ -160,12 +160,12 @@ def search_pokemon_by_type_and_move(
         raise e
 
 
-def get_table_preview(table_name: str, limit: int = 100, db_path: Path | None = None) -> pl.DataFrame:
+def get_table_preview(table_name: str, limit: int | None = 100, db_path: Path | None = None) -> pl.DataFrame:
     """Get a preview of a table's contents.
 
     Args:
         table_name: Name of the table to preview.
-        limit: Maximum rows to return.
+        limit: Maximum rows to return. None for all rows.
         db_path: Optional path to database.
 
     Returns:
@@ -175,7 +175,10 @@ def get_table_preview(table_name: str, limit: int = 100, db_path: Path | None = 
 
     try:
         # Table name comes from get_table_list() which queries the schema
-        result = conn.execute(f"SELECT * FROM {table_name} LIMIT ?", [limit]).pl()  # noqa: S608
+        if limit is None:
+            result = conn.execute(f"SELECT * FROM {table_name}").pl()  # noqa: S608
+        else:
+            result = conn.execute(f"SELECT * FROM {table_name} LIMIT ?", [limit]).pl()  # noqa: S608
         conn.close()
         return result
     except Exception as e:
