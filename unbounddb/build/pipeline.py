@@ -15,8 +15,10 @@ from unbounddb.ingestion.c_parser import (
     parse_learnsets_file,
     parse_moves_info_file,
 )
+from unbounddb.ingestion.egg_moves_parser import parse_egg_moves_file
 from unbounddb.ingestion.evolution_parser import parse_evolutions_file
 from unbounddb.ingestion.locations_parser import parse_locations_csv
+from unbounddb.ingestion.tm_tutor_parser import parse_tm_tutor_directory
 from unbounddb.settings import settings
 
 LogFunc = Callable[[str], None]
@@ -39,26 +41,118 @@ def _parse_pokemon(source_dir: Path, curated_dir: Path, log: LogFunc) -> tuple[s
     return ("pokemon", parquet_path)
 
 
-def _parse_learnsets(source_dir: Path, curated_dir: Path, log: LogFunc) -> tuple[str, Path] | None:
-    """Parse Learnsets.c to learnsets parquet."""
+def _parse_level_up_moves(source_dir: Path, curated_dir: Path, log: LogFunc) -> pl.DataFrame | None:
+    """Parse Learnsets.c to DataFrame with level-up moves.
+
+    Returns:
+        DataFrame with pokemon_key, move_key, learn_method='level', level columns,
+        or None if file not found.
+    """
     learnsets_path = source_dir / "Learnsets.c"
     if not learnsets_path.exists():
         log(f"Warning: Learnsets.c not found at {learnsets_path}")
         return None
 
-    log("Parsing Learnsets.c...")
+    log("Parsing Learnsets.c (level-up moves)...")
     df = parse_learnsets_file(learnsets_path)
-    df = df.with_columns(
-        [
-            pl.col("pokemon").map_elements(slugify, return_dtype=pl.String).alias("pokemon_key"),
-            pl.col("move").map_elements(slugify, return_dtype=pl.String).alias("move_key"),
-        ]
-    )
+    log(f"  -> {len(df)} level-up move entries")
+    return df
 
-    parquet_path = curated_dir / "learnsets.parquet"
-    df.write_parquet(parquet_path)
-    log(f"  -> {parquet_path} ({len(df)} rows)")
-    return ("learnsets", parquet_path)
+
+def _parse_egg_moves(source_dir: Path, curated_dir: Path, log: LogFunc) -> pl.DataFrame | None:
+    """Parse Egg_Moves.c to DataFrame with egg moves.
+
+    Returns:
+        DataFrame with pokemon_key, move_key, learn_method='egg', level=None columns,
+        or None if file not found.
+    """
+    egg_moves_path = source_dir / "Egg_Moves.c"
+    if not egg_moves_path.exists():
+        log(f"Warning: Egg_Moves.c not found at {egg_moves_path}")
+        return None
+
+    log("Parsing Egg_Moves.c (egg moves)...")
+    df = parse_egg_moves_file(egg_moves_path)
+    log(f"  -> {len(df)} egg move entries")
+    return df
+
+
+def _parse_tm_moves(source_dir: Path, curated_dir: Path, log: LogFunc) -> pl.DataFrame | None:
+    """Parse tm_compatibility/*.txt to DataFrame with TM moves.
+
+    Returns:
+        DataFrame with pokemon_key, move_key, learn_method='tm', level=None columns,
+        or None if directory not found.
+    """
+    tm_dir = source_dir / "tm_compatibility"
+    if not tm_dir.exists():
+        log(f"Warning: tm_compatibility not found at {tm_dir}")
+        return None
+
+    log("Parsing tm_compatibility/*.txt (TM moves)...")
+    df = parse_tm_tutor_directory(tm_dir, "tm")
+    log(f"  -> {len(df)} TM move entries")
+    return df
+
+
+def _parse_tutor_moves(source_dir: Path, curated_dir: Path, log: LogFunc) -> pl.DataFrame | None:
+    """Parse tutor_compatibility/*.txt to DataFrame with tutor moves.
+
+    Returns:
+        DataFrame with pokemon_key, move_key, learn_method='tutor', level=None columns,
+        or None if directory not found.
+    """
+    tutor_dir = source_dir / "tutor_compatibility"
+    if not tutor_dir.exists():
+        log(f"Warning: tutor_compatibility not found at {tutor_dir}")
+        return None
+
+    log("Parsing tutor_compatibility/*.txt (tutor moves)...")
+    df = parse_tm_tutor_directory(tutor_dir, "tutor")
+    log(f"  -> {len(df)} tutor move entries")
+    return df
+
+
+def _combine_pokemon_moves(
+    level_up_df: pl.DataFrame | None,
+    egg_df: pl.DataFrame | None,
+    tm_df: pl.DataFrame | None,
+    tutor_df: pl.DataFrame | None,
+    curated_dir: Path,
+    log: LogFunc,
+) -> tuple[str, Path] | None:
+    """Combine all move sources into pokemon_moves.parquet.
+
+    Args:
+        level_up_df: DataFrame with level-up moves.
+        egg_df: DataFrame with egg moves.
+        tm_df: DataFrame with TM moves.
+        tutor_df: DataFrame with tutor moves.
+        curated_dir: Directory for output Parquet files.
+        log: Logging callback function.
+
+    Returns:
+        Tuple of ('pokemon_moves', parquet_path) or None if all sources are empty.
+    """
+    dataframes = [df for df in [level_up_df, egg_df, tm_df, tutor_df] if df is not None and len(df) > 0]
+
+    if not dataframes:
+        log("Warning: No move data found from any source")
+        return None
+
+    log("Combining all move sources...")
+    combined_df = pl.concat(dataframes)
+
+    parquet_path = curated_dir / "pokemon_moves.parquet"
+    combined_df.write_parquet(parquet_path)
+    log(f"  -> {parquet_path} ({len(combined_df)} rows)")
+
+    # Log breakdown by learn_method
+    method_counts = combined_df.group_by("learn_method").len().sort("learn_method")
+    for row in method_counts.iter_rows():
+        log(f"     - {row[0]}: {row[1]} entries")
+
+    return ("pokemon_moves", parquet_path)
 
 
 def _parse_trainers(
@@ -114,10 +208,10 @@ def _parse_trainers(
 def _parse_moves(
     source_dir: Path,
     curated_dir: Path,
-    learnsets_parquet: Path | None,
+    pokemon_moves_df: pl.DataFrame | None,
     log: LogFunc,
 ) -> tuple[str, Path] | None:
-    """Parse moves_info.h to moves parquet, or extract from learnsets as fallback."""
+    """Parse moves_info.h to moves parquet, or extract from pokemon_moves as fallback."""
     moves_info_path = source_dir / "moves_info.h"
     if moves_info_path.exists():
         log("Parsing moves_info.h...")
@@ -129,10 +223,9 @@ def _parse_moves(
         log(f"  -> {parquet_path} ({len(df)} rows)")
         return ("moves", parquet_path)
 
-    if learnsets_parquet is not None:
-        log("Extracting moves table from learnsets (moves_info.h not found)...")
-        learnsets_df = pl.read_parquet(learnsets_parquet)
-        moves_df = learnsets_df.select(["move", "move_key"]).unique().sort("move")
+    if pokemon_moves_df is not None:
+        log("Extracting moves table from pokemon_moves (moves_info.h not found)...")
+        moves_df = pokemon_moves_df.select(["move_key"]).unique().sort("move_key")
 
         parquet_path = curated_dir / "moves.parquet"
         moves_df.write_parquet(parquet_path)
@@ -311,12 +404,21 @@ def run_github_build_pipeline(
     if result := _parse_pokemon(source_dir, curated_dir, log):
         parquet_files[result[0]] = result[1]
 
-    learnsets_path = None
-    if result := _parse_learnsets(source_dir, curated_dir, log):
-        parquet_files[result[0]] = result[1]
-        learnsets_path = result[1]
+    # Parse all move sources
+    level_up_df = _parse_level_up_moves(source_dir, curated_dir, log)
+    egg_df = _parse_egg_moves(source_dir, curated_dir, log)
+    tm_df = _parse_tm_moves(source_dir, curated_dir, log)
+    tutor_df = _parse_tutor_moves(source_dir, curated_dir, log)
 
-    if result := _parse_moves(source_dir, curated_dir, learnsets_path, log):
+    # Combine into unified pokemon_moves table
+    pokemon_moves_df: pl.DataFrame | None = None
+    if result := _combine_pokemon_moves(level_up_df, egg_df, tm_df, tutor_df, curated_dir, log):
+        parquet_files[result[0]] = result[1]
+        # Read back combined DataFrame for move extraction fallback
+        pokemon_moves_df = pl.read_parquet(result[1])
+
+    # Parse moves from moves_info.h or extract from pokemon_moves
+    if result := _parse_moves(source_dir, curated_dir, pokemon_moves_df, log):
         parquet_files[result[0]] = result[1]
 
     # Parse trainer data

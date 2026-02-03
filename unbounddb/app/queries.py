@@ -127,10 +127,10 @@ def search_pokemon_by_type_and_move(
         conditions: list[str] = []
         params: list[str] = []
 
-        # Add learnsets join if filtering by move
-        if move_name and "learnsets" in tables_available:
-            query += " JOIN learnsets l ON p.pokemon_key = l.pokemon_key"
-            conditions.append("l.move_key = ?")
+        # Add pokemon_moves join if filtering by move
+        if move_name and "pokemon_moves" in tables_available:
+            query += " JOIN pokemon_moves pm ON p.pokemon_key = pm.pokemon_key"
+            conditions.append("pm.move_key = ?")
             params.append(slugify(move_name))
 
         # Add type filter

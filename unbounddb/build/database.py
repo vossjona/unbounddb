@@ -82,6 +82,10 @@ def create_indexes(conn: duckdb.DuckDBPyConnection) -> None:
         if "location_name" in col_names:
             conn.execute(f"CREATE INDEX idx_{table_name}_location_name ON {table_name}(location_name)")
 
+        # Index for pokemon_moves learn_method
+        if "learn_method" in col_names:
+            conn.execute(f"CREATE INDEX idx_{table_name}_learn_method ON {table_name}(learn_method)")
+
 
 def get_connection(db_path: Path) -> duckdb.DuckDBPyConnection:
     """Get a read-only connection to an existing database.

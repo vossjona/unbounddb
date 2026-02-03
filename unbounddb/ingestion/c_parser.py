@@ -231,11 +231,14 @@ def learnsets_to_dataframe(entries: list[LearnsetEntry]) -> pl.DataFrame:
         entries: List of LearnsetEntry dataclasses.
 
     Returns:
-        Polars DataFrame with learnset data.
+        Polars DataFrame with pokemon_key, move_key, learn_method, and level columns.
     """
+    from unbounddb.build.normalize import slugify  # noqa: PLC0415
+
     data = {
-        "pokemon": [e.pokemon for e in entries],
-        "move": [e.move for e in entries],
+        "pokemon_key": [slugify(e.pokemon) for e in entries],
+        "move_key": [slugify(e.move) for e in entries],
+        "learn_method": ["level"] * len(entries),
         "level": [e.level for e in entries],
     }
     return pl.DataFrame(data)

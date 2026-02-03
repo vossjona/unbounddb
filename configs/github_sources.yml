@@ -33,3 +33,13 @@ sources:
     file: "Evolution%20Table.c"
     description: "Pokemon evolution chains and methods"
     parser: "evolutions"
+
+  tm_compatibility:
+    directory: "tm_compatibility"
+    description: "TM move compatibility lists"
+    parser: "tm_compatibility"
+
+  tutor_compatibility:
+    directory: "tutor_compatibility"
+    description: "Move tutor compatibility lists"
+    parser: "tutor_compatibility"

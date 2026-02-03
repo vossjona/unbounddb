@@ -4,6 +4,7 @@ ABOUTME: Provides fetch, build, and ui commands via Typer."""
 import asyncio
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 import typer
@@ -27,11 +28,22 @@ app = typer.Typer(
 console = Console()
 
 
-def _print_paths(paths: dict[str, Path], label: str) -> None:
+def _print_paths(paths: Mapping[str, Path | list[Path]], label: str) -> None:
     """Print fetched/found paths."""
-    console.print(f"[green]{label} {len(paths)} files:[/]")
+    # Count total items (files or directories with their file counts)
+    total_count = 0
+    for value in paths.values():
+        if isinstance(value, list):
+            total_count += len(value)
+        else:
+            total_count += 1
+
+    console.print(f"[green]{label} {total_count} items across {len(paths)} sources:[/]")
     for name, path in paths.items():
-        console.print(f"  {name}: {path}")
+        if isinstance(path, list):
+            console.print(f"  {name}: {len(path)} files")
+        else:
+            console.print(f"  {name}: {path}")
 
 
 def _fetch_manual(verbose: bool) -> None:
