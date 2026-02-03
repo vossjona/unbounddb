@@ -28,3 +28,8 @@ sources:
     url: "https://raw.githubusercontent.com/rh-hideout/pokeemerald-expansion/master/src/data/moves_info.h"
     description: "Move types, power, accuracy, effects, flags"
     parser: "moves_info"
+
+  evolutions:
+    file: "Evolution%20Table.c"
+    description: "Pokemon evolution chains and methods"
+    parser: "evolutions"

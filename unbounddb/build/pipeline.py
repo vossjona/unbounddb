@@ -15,6 +15,8 @@ from unbounddb.ingestion.c_parser import (
     parse_learnsets_file,
     parse_moves_info_file,
 )
+from unbounddb.ingestion.evolution_parser import parse_evolutions_file
+from unbounddb.ingestion.locations_parser import parse_locations_csv
 from unbounddb.settings import settings
 
 LogFunc = Callable[[str], None]
@@ -138,6 +140,49 @@ def _parse_moves(
         return ("moves", parquet_path)
 
     return None
+
+
+def _parse_evolutions(source_dir: Path, curated_dir: Path, log: LogFunc) -> tuple[str, Path] | None:
+    """Parse Evolution Table.c to evolutions parquet."""
+    evo_path = source_dir / "Evolution Table.c"
+    if not evo_path.exists():
+        # Try URL-encoded version
+        evo_path = source_dir / "Evolution%20Table.c"
+        if not evo_path.exists():
+            log(f"Warning: Evolution Table.c not found at {source_dir}")
+            return None
+
+    log("Parsing Evolution Table.c...")
+    df = parse_evolutions_file(evo_path)
+
+    if len(df) == 0:
+        log("  -> No evolutions found (empty result)")
+        return None
+
+    parquet_path = curated_dir / "evolutions.parquet"
+    df.write_parquet(parquet_path)
+    log(f"  -> {parquet_path} ({len(df)} rows)")
+    return ("evolutions", parquet_path)
+
+
+def _parse_locations(source_dir: Path, curated_dir: Path, log: LogFunc) -> tuple[str, Path] | None:
+    """Parse locations.csv to locations parquet."""
+    locations_path = source_dir / "locations.csv"
+    if not locations_path.exists():
+        log(f"Warning: locations.csv not found at {locations_path}")
+        return None
+
+    log("Parsing locations.csv...")
+    df = parse_locations_csv(locations_path)
+
+    if len(df) == 0:
+        log("  -> No locations found (empty result)")
+        return None
+
+    parquet_path = curated_dir / "locations.parquet"
+    df.write_parquet(parquet_path)
+    log(f"  -> {parquet_path} ({len(df)} rows)")
+    return ("locations", parquet_path)
 
 
 def run_build_pipeline(
@@ -277,6 +322,14 @@ def run_github_build_pipeline(
     # Parse trainer data
     trainer_files = _parse_trainers(source_dir, curated_dir, log)
     parquet_files.update(trainer_files)
+
+    # Parse evolutions
+    if result := _parse_evolutions(source_dir, curated_dir, log):
+        parquet_files[result[0]] = result[1]
+
+    # Parse locations
+    if result := _parse_locations(source_dir, curated_dir, log):
+        parquet_files[result[0]] = result[1]
 
     if not parquet_files:
         raise ValueError(f"No source files found in {source_dir}")

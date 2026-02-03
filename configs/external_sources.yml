@@ -6,3 +6,8 @@ sources:
     url: "https://pastebin.com/raw/dRj8YnX0"
     description: "Trainer battles in Showdown/PokePaste format"
     parser: "showdown"
+
+  locations:
+    url: "https://docs.google.com/spreadsheets/d/1PyGm-yrit5Ow6cns2tBA9VEMwLVMzn3YhDRipABjLUM/export?format=csv&gid=897380238"
+    description: "Wild Pokemon encounter locations"
+    parser: "locations"

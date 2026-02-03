@@ -71,6 +71,17 @@ def create_indexes(conn: duckdb.DuckDBPyConnection) -> None:
         if "trainer_pokemon_id" in col_names:
             conn.execute(f"CREATE INDEX idx_{table_name}_trainer_pokemon_id ON {table_name}(trainer_pokemon_id)")
 
+        # Index for evolution foreign keys
+        if "from_pokemon_key" in col_names:
+            conn.execute(f"CREATE INDEX idx_{table_name}_from_pokemon_key ON {table_name}(from_pokemon_key)")
+
+        if "to_pokemon_key" in col_names:
+            conn.execute(f"CREATE INDEX idx_{table_name}_to_pokemon_key ON {table_name}(to_pokemon_key)")
+
+        # Index for location name
+        if "location_name" in col_names:
+            conn.execute(f"CREATE INDEX idx_{table_name}_location_name ON {table_name}(location_name)")
+
 
 def get_connection(db_path: Path) -> duckdb.DuckDBPyConnection:
     """Get a read-only connection to an existing database.

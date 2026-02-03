@@ -292,7 +292,9 @@ async def fetch_external_file(
     url = source["url"]
 
     # Use source name as filename with appropriate extension
-    filename = f"{source_name}.txt"
+    # CSV exports from Google Sheets use .csv extension
+    extension = ".csv" if "format=csv" in url else ".txt"
+    filename = f"{source_name}{extension}"
     output_path = output_dir / filename
 
     if output_path.exists() and not force:
