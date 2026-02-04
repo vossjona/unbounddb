@@ -25,6 +25,10 @@ from unbounddb.app.tools.offensive_suggester import (
     get_trainer_pokemon_types,
     get_type_coverage_detail,
 )
+from unbounddb.app.tools.phys_spec_analyzer import (
+    analyze_trainer_defensive_profile,
+    analyze_trainer_offensive_profile,
+)
 from unbounddb.settings import settings
 
 st.set_page_config(
@@ -210,8 +214,8 @@ with tab3:
             if team_names:
                 st.markdown(f"**Trainer's Team:** {', '.join(team_names)}")
 
-            # Nested tabs for defensive/offensive analysis
-            def_tab, off_tab = st.tabs(["Defensive Analysis", "Offensive Analysis"])
+            # Nested tabs for defensive/offensive/physical-special analysis
+            def_tab, off_tab, phys_spec_tab = st.tabs(["Defensive Analysis", "Offensive Analysis", "Physical/Special"])
 
             # --- DEFENSIVE ANALYSIS TAB ---
             with def_tab:
@@ -440,6 +444,109 @@ with tab3:
                                                 else "No effective type"
                                             )
                                             st.write(f"- {prow['pokemon_key']} ({type_str}): {best_info}")
+
+            # --- PHYSICAL/SPECIAL ANALYSIS TAB ---
+            with phys_spec_tab:
+                if not pokemon_types:
+                    st.warning("No Pokemon found for this trainer's team.")
+                else:
+                    # Section 1: Their Offensive Profile
+                    st.subheader("Their Offensive Profile")
+                    st.caption("What type of moves does the trainer use? Should you prioritize Defense or Sp.Def?")
+
+                    offensive_profile = analyze_trainer_offensive_profile(trainer_id)
+
+                    if offensive_profile["recommendation"] == "No data available":
+                        st.warning("No move data available for this trainer's team.")
+                    else:
+                        # Bar chart: Physical vs Special attacker counts
+                        attacker_data = {
+                            "Type": ["Physical", "Special", "Mixed"],
+                            "Count": [
+                                offensive_profile["physical_count"],
+                                offensive_profile["special_count"],
+                                offensive_profile["mixed_count"],
+                            ],
+                        }
+                        st.bar_chart(attacker_data, x="Type", y="Count", horizontal=True)
+
+                        # Team stats
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Avg Team Attack", offensive_profile["avg_team_attack"])
+                            st.metric("Total Physical Power", offensive_profile["total_physical_power"])
+                        with col2:
+                            st.metric("Avg Team Sp.Attack", offensive_profile["avg_team_sp_attack"])
+                            st.metric("Total Special Power", offensive_profile["total_special_power"])
+
+                        # Recommendation
+                        st.info(f"**Recommendation:** {offensive_profile['recommendation']}")
+
+                        # Per-Pokemon breakdown
+                        with st.expander("Per-Pokemon Breakdown"):
+                            for pdetail in offensive_profile["pokemon_details"]:
+                                pokemon_key = pdetail["pokemon_key"]
+                                profile = pdetail["profile"]
+                                attack = pdetail["attack"]
+                                sp_attack = pdetail["sp_attack"]
+                                phys_moves = pdetail["physical_moves"]
+                                spec_moves = pdetail["special_moves"]
+
+                                move_info = []
+                                if phys_moves:
+                                    move_info.append(f"Physical: {', '.join(phys_moves)}")
+                                if spec_moves:
+                                    move_info.append(f"Special: {', '.join(spec_moves)}")
+                                move_str = " | ".join(move_info) if move_info else "No offensive moves"
+
+                                st.write(
+                                    f"- **{pokemon_key}** (Atk: {attack}, SpA: {sp_attack}): {profile} - {move_str}"
+                                )
+
+                    st.divider()
+
+                    # Section 2: Our Offensive Strategy
+                    st.subheader("Your Offensive Strategy")
+                    st.caption(
+                        "What defensive stats does the trainer's team have? Should you use Physical or Special moves?"
+                    )
+
+                    defensive_profile = analyze_trainer_defensive_profile(trainer_id)
+
+                    if defensive_profile["recommendation"] == "No data available":
+                        st.warning("No stat data available for this trainer's team.")
+                    else:
+                        # Bar chart: Defensive profile counts
+                        defender_data = {
+                            "Type": ["Physically Defensive", "Specially Defensive", "Balanced"],
+                            "Count": [
+                                defensive_profile["physically_defensive_count"],
+                                defensive_profile["specially_defensive_count"],
+                                defensive_profile["balanced_count"],
+                            ],
+                        }
+                        st.bar_chart(defender_data, x="Type", y="Count", horizontal=True)
+
+                        # Team stats
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Avg Team Defense", defensive_profile["avg_team_defense"])
+                        with col2:
+                            st.metric("Avg Team Sp.Defense", defensive_profile["avg_team_sp_defense"])
+
+                        # Recommendation
+                        st.info(f"**Recommendation:** {defensive_profile['recommendation']}")
+
+                        # Per-Pokemon breakdown
+                        with st.expander("Per-Pokemon Breakdown"):
+                            for pdetail in defensive_profile["pokemon_details"]:
+                                pokemon_key = pdetail["pokemon_key"]
+                                profile = pdetail["profile"]
+                                defense = pdetail["defense"]
+                                sp_defense = pdetail["sp_defense"]
+
+                                st.write(f"- **{pokemon_key}** (Def: {defense}, SpD: {sp_defense}): {profile}")
+
         else:
             st.error("Could not load trainer information.")
     else:
