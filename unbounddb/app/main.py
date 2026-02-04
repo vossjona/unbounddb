@@ -18,6 +18,13 @@ from unbounddb.app.tools.defensive_suggester import (
     get_neutralized_pokemon_detail,
     get_trainer_move_types,
 )
+from unbounddb.app.tools.offensive_suggester import (
+    analyze_four_type_coverage,
+    analyze_single_type_offense,
+    get_single_type_detail,
+    get_trainer_pokemon_types,
+    get_type_coverage_detail,
+)
 from unbounddb.settings import settings
 
 st.set_page_config(
@@ -44,7 +51,7 @@ except Exception as e:
     st.stop()
 
 # Main content area - tabs
-tab1, tab2, tab3 = st.tabs(["Search Results", "Browse Tables", "Defensive Type Suggester"])
+tab1, tab2, tab3 = st.tabs(["Search Results", "Browse Tables", "Type Suggester"])
 
 # Sidebar content changes based on selected tab
 # We use session state to track which tab's sidebar to show
@@ -110,7 +117,7 @@ elif st.session_state.active_tab == "defensive":
     )
 
     # Analyze button
-    analyze_clicked = st.sidebar.button("Analyze Defensive Types", type="primary", key="analyze_btn")
+    analyze_clicked = st.sidebar.button("Analyze Types", type="primary", key="analyze_btn")
 
 # Tab 1: Search Results
 with tab1:
@@ -139,7 +146,7 @@ with tab1:
         else:
             st.dataframe(
                 results.to_pandas(),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
     else:
@@ -161,13 +168,13 @@ with tab2:
             st.subheader(f"{selected_table} ({row_label} {len(preview)} rows)")
             st.dataframe(
                 preview.to_pandas(),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
     else:
         st.warning("No tables found in database.")
 
-# Tab 3: Defensive Type Suggester
+# Tab 3: Type Suggester (Defensive + Offensive)
 with tab3:
     # Get sidebar values
     selected_difficulty = st.session_state.get("def_difficulty", "Any")
@@ -179,10 +186,17 @@ with tab3:
     trainers = get_trainers_by_difficulty(difficulty_filter)
     trainer_options = {f"{name} (ID: {tid})": tid for tid, name in trainers}
 
+    # Store analyzed trainer in session state so it persists across checkbox reruns
+    if analyze_clicked and selected_trainer_str in trainer_options:
+        st.session_state["analyzed_trainer_id"] = trainer_options[selected_trainer_str]
+
+    # Check if we have an analyzed trainer (either from this click or previous)
+    analyzed_trainer_id = st.session_state.get("analyzed_trainer_id")
+
     if not trainers:
         st.warning("No trainers found in the database. Please run `unbounddb build` first.")
-    elif analyze_clicked and selected_trainer_str in trainer_options:
-        trainer_id = trainer_options[selected_trainer_str]
+    elif analyzed_trainer_id is not None:
+        trainer_id = analyzed_trainer_id
         trainer_info = get_trainer_by_id(trainer_id)
 
         if trainer_info:
@@ -190,109 +204,246 @@ with tab3:
             difficulty_str = f" ({trainer_info['difficulty']})" if trainer_info["difficulty"] else ""
             st.header(f"Trainer: {trainer_info['name']}{difficulty_str}")
 
-            # Get and display move types
-            move_types = get_trainer_move_types(trainer_id)
-            if move_types:
-                st.markdown(f"**Move Types Used:** {', '.join(move_types)} ({len(move_types)} types)")
-            else:
-                st.warning("No offensive moves found for this trainer's team.")
-                st.stop()
+            # Get trainer's team info
+            pokemon_types = get_trainer_pokemon_types(trainer_id)
+            team_names = [p["pokemon_key"] for p in pokemon_types]
+            if team_names:
+                st.markdown(f"**Trainer's Team:** {', '.join(team_names)}")
 
-            # Analyze defensive types
-            analysis_df = analyze_trainer_defense(trainer_id)
+            # Nested tabs for defensive/offensive analysis
+            def_tab, off_tab = st.tabs(["Defensive Analysis", "Offensive Analysis"])
 
-            if analysis_df.is_empty():
-                st.warning("Could not analyze defensive types.")
-            else:
-                st.subheader("Best Defensive Typings")
+            # --- DEFENSIVE ANALYSIS TAB ---
+            with def_tab:
+                # Get and display move types
+                move_types = get_trainer_move_types(trainer_id)
+                if move_types:
+                    st.markdown(f"**Move Types Used:** {', '.join(move_types)} ({len(move_types)} types)")
+                else:
+                    st.warning("No offensive moves found for this trainer's team.")
+                    st.stop()
 
-                # Show all checkbox
-                show_all_combos = st.checkbox(
-                    "Show all 171 combinations",
-                    value=False,
-                    key="def_show_all",
-                )
+                # Analyze defensive types
+                analysis_df = analyze_trainer_defense(trainer_id)
 
-                # Limit results
-                display_df = analysis_df if show_all_combos else analysis_df.head(20)
+                if analysis_df.is_empty():
+                    st.warning("Could not analyze defensive types.")
+                else:
+                    st.subheader("Best Defensive Typings")
 
-                # Create display table
-                table_data = []
-                for row in display_df.iter_rows(named=True):
-                    type_combo = row["type1"]
-                    if row["type2"]:
-                        type_combo = f"{row['type1']}/{row['type2']}"
-                    table_data.append(
-                        {
-                            "Type Combo": type_combo,
-                            "Immun": row["immunity_count"],
-                            "Resist": row["resistance_count"],
-                            "Neutral": row["neutral_count"],
-                            "Weak": row["weakness_count"],
-                            "Neutralized": f"{row['pokemon_neutralized']}/{len(trainers)}",
-                            "Score": row["score"],
-                        }
+                    # Show all checkbox
+                    show_all_combos = st.checkbox(
+                        "Show all 171 combinations",
+                        value=False,
+                        key="def_show_all",
                     )
 
-                st.dataframe(
-                    table_data,
-                    use_container_width=True,
-                    hide_index=True,
-                )
+                    # Limit results
+                    display_df = analysis_df if show_all_combos else analysis_df.head(20)
 
-                # Expanders for detail view
-                st.subheader("Detailed Breakdown")
-                for i, row in enumerate(display_df.head(10).iter_rows(named=True)):
-                    type_combo = row["type1"]
-                    type2 = row["type2"]
-                    if type2:
-                        type_combo = f"{row['type1']}/{type2}"
+                    # Create display table
+                    table_data = []
+                    for row in display_df.iter_rows(named=True):
+                        type_combo = row["type1"]
+                        if row["type2"]:
+                            type_combo = f"{row['type1']}/{row['type2']}"
+                        table_data.append(
+                            {
+                                "Type Combo": type_combo,
+                                "Immun": row["immunity_count"],
+                                "Resist": row["resistance_count"],
+                                "Neutral": row["neutral_count"],
+                                "Weak": row["weakness_count"],
+                                "Neutralized": f"{row['pokemon_neutralized']}/{len(pokemon_types)}",
+                                "Score": row["score"],
+                            }
+                        )
 
-                    with st.expander(f"#{i + 1} {type_combo} (Score: {row['score']})"):
-                        col1, col2, col3 = st.columns(3)
+                    st.dataframe(
+                        table_data,
+                        width="stretch",
+                        hide_index=True,
+                    )
 
-                        with col1:
-                            st.markdown("**Immunities:**")
-                            st.write(row["immunities_list"])
+                    # Expanders for detail view
+                    st.subheader("Detailed Breakdown")
+                    for i, row in enumerate(display_df.head(10).iter_rows(named=True)):
+                        type_combo = row["type1"]
+                        type2 = row["type2"]
+                        if type2:
+                            type_combo = f"{row['type1']}/{type2}"
 
-                        with col2:
-                            st.markdown("**Resistances:**")
-                            st.write(row["resistances_list"])
+                        with st.expander(f"#{i + 1} {type_combo} (Score: {row['score']})"):
+                            col1, col2, col3 = st.columns(3)
 
-                        with col3:
-                            st.markdown("**Weaknesses:**")
-                            st.write(row["weaknesses_list"])
+                            with col1:
+                                st.markdown("**Immunities:**")
+                                st.write(row["immunities_list"])
 
-                        # Get neutralized Pokemon detail
-                        detail_df = get_neutralized_pokemon_detail(trainer_id, row["type1"], type2)
+                            with col2:
+                                st.markdown("**Resistances:**")
+                                st.write(row["resistances_list"])
 
-                        if not detail_df.is_empty():
-                            neutralized = detail_df.filter(detail_df["is_neutralized"])
-                            can_hurt = detail_df.filter(~detail_df["is_neutralized"])
+                            with col3:
+                                st.markdown("**Weaknesses:**")
+                                st.write(row["weaknesses_list"])
 
-                            total_pokemon = len(detail_df)
+                            # Get neutralized Pokemon detail
+                            detail_df = get_neutralized_pokemon_detail(trainer_id, row["type1"], type2)
 
-                            if not neutralized.is_empty():
-                                st.markdown(f"**Pokemon Neutralized ({len(neutralized)}/{total_pokemon}):**")
-                                for prow in neutralized.iter_rows(named=True):
-                                    eff_str = f"{prow['best_effectiveness']}x"
-                                    st.write(
-                                        f"- {prow['pokemon_key']} (slot {prow['slot']}): "
-                                        f"Best move = {prow['best_move']} ({eff_str})"
-                                    )
+                            if not detail_df.is_empty():
+                                neutralized = detail_df.filter(detail_df["is_neutralized"])
+                                can_hurt = detail_df.filter(~detail_df["is_neutralized"])
 
-                            if not can_hurt.is_empty():
-                                st.markdown(f"**Can Still Hurt You ({len(can_hurt)}/{total_pokemon}):**")
-                                for prow in can_hurt.iter_rows(named=True):
-                                    eff_str = f"{prow['best_effectiveness']}x"
-                                    st.write(
-                                        f"- {prow['pokemon_key']} (slot {prow['slot']}): "
-                                        f"{prow['best_move']} ({eff_str})"
-                                    )
+                                total_pokemon = len(detail_df)
+
+                                if not neutralized.is_empty():
+                                    st.markdown(f"**Pokemon Neutralized ({len(neutralized)}/{total_pokemon}):**")
+                                    for prow in neutralized.iter_rows(named=True):
+                                        eff_str = f"{prow['best_effectiveness']}x"
+                                        st.write(
+                                            f"- {prow['pokemon_key']} (slot {prow['slot']}): "
+                                            f"Best move = {prow['best_move']} ({eff_str})"
+                                        )
+
+                                if not can_hurt.is_empty():
+                                    st.markdown(f"**Can Still Hurt You ({len(can_hurt)}/{total_pokemon}):**")
+                                    for prow in can_hurt.iter_rows(named=True):
+                                        eff_str = f"{prow['best_effectiveness']}x"
+                                        st.write(
+                                            f"- {prow['pokemon_key']} (slot {prow['slot']}): "
+                                            f"{prow['best_move']} ({eff_str})"
+                                        )
+
+            # --- OFFENSIVE ANALYSIS TAB ---
+            with off_tab:
+                if not pokemon_types:
+                    st.warning("No Pokemon found for this trainer's team.")
+                else:
+                    # --- Individual Type Rankings ---
+                    st.subheader("Individual Type Rankings")
+
+                    single_type_df = analyze_single_type_offense(trainer_id)
+
+                    if single_type_df.is_empty():
+                        st.warning("Could not analyze offensive types.")
+                    else:
+                        show_all_types = st.checkbox(
+                            "Show all 18 types",
+                            value=False,
+                            key="off_show_all_types",
+                        )
+
+                        display_single_df = single_type_df if show_all_types else single_type_df.head(10)
+
+                        # Create display table
+                        single_table_data = [
+                            {
+                                "Type": row["type"],
+                                "4x": row["4x_count"],
+                                "2x": row["2x_count"],
+                                "Neutral": row["neutral_count"],
+                                "Resist": row["resisted_count"],
+                                "Immune": row["immune_count"],
+                                "Score": row["score"],
+                            }
+                            for row in display_single_df.iter_rows(named=True)
+                        ]
+
+                        st.dataframe(
+                            single_table_data,
+                            width="stretch",
+                            hide_index=True,
+                        )
+
+                        # Expanders for individual type details
+                        for row in display_single_df.head(5).iter_rows(named=True):
+                            atk_type = row["type"]
+                            with st.expander(f"{atk_type} Details (Score: {row['score']})"):
+                                detail_df = get_single_type_detail(trainer_id, atk_type)
+
+                                if not detail_df.is_empty():
+                                    for prow in detail_df.iter_rows(named=True):
+                                        type_str = prow["type1"]
+                                        if prow["type2"]:
+                                            type_str = f"{prow['type1']}/{prow['type2']}"
+                                        eff_str = f"{prow['effectiveness']}x"
+                                        category = prow["category"]
+                                        st.write(f"- {prow['pokemon_key']} ({type_str}): {eff_str} ({category})")
+
+                    # --- 4-Type Coverage ---
+                    st.subheader("Best 4-Type Coverage")
+                    st.caption("Pokemon can learn 4 moves. These combinations maximize super-effective coverage.")
+
+                    coverage_df = analyze_four_type_coverage(trainer_id)
+
+                    if coverage_df.is_empty():
+                        st.warning("Could not analyze type coverage.")
+                    else:
+                        show_all_combos_off = st.checkbox(
+                            "Show all combinations",
+                            value=False,
+                            key="off_show_all_combos",
+                        )
+
+                        display_coverage_df = coverage_df if show_all_combos_off else coverage_df.head(20)
+
+                        # Create display table
+                        coverage_table_data = [
+                            {
+                                "Types": row["types"],
+                                "Covered": f"{row['covered_count']}/{row['total_pokemon']}",
+                                "Coverage": f"{row['coverage_pct']}%",
+                                "Score": row["score"],
+                            }
+                            for row in display_coverage_df.iter_rows(named=True)
+                        ]
+
+                        st.dataframe(
+                            coverage_table_data,
+                            width="stretch",
+                            hide_index=True,
+                        )
+
+                        # Expanders for coverage details
+                        for row in display_coverage_df.head(5).iter_rows(named=True):
+                            types_str = row["types"]
+                            types_list = [t.strip() for t in types_str.split(",")]
+
+                            with st.expander(f"{types_str} (Score: {row['score']})"):
+                                detail_df = get_type_coverage_detail(trainer_id, types_list)
+
+                                if not detail_df.is_empty():
+                                    covered = detail_df.filter(detail_df["is_covered"])
+                                    not_covered = detail_df.filter(~detail_df["is_covered"])
+
+                                    if not covered.is_empty():
+                                        st.markdown("**Covered (2x+):**")
+                                        for prow in covered.iter_rows(named=True):
+                                            type_str = prow["type1"]
+                                            if prow["type2"]:
+                                                type_str = f"{prow['type1']}/{prow['type2']}"
+                                            st.write(
+                                                f"- {prow['pokemon_key']} ({type_str}): "
+                                                f"{prow['best_type']} ({prow['best_effectiveness']}x)"
+                                            )
+
+                                    if not not_covered.is_empty():
+                                        st.markdown("**Not Covered (<2x):**")
+                                        for prow in not_covered.iter_rows(named=True):
+                                            type_str = prow["type1"]
+                                            if prow["type2"]:
+                                                type_str = f"{prow['type1']}/{prow['type2']}"
+                                            best_info = (
+                                                f"{prow['best_type']} ({prow['best_effectiveness']}x)"
+                                                if prow["best_type"]
+                                                else "No effective type"
+                                            )
+                                            st.write(f"- {prow['pokemon_key']} ({type_str}): {best_info}")
         else:
             st.error("Could not load trainer information.")
     else:
         st.info(
-            "Select a difficulty and trainer from the sidebar, then click 'Analyze Defensive Types' "
-            "to find the best defensive type combinations against that trainer's team."
+            "Select a difficulty and trainer from the sidebar, then click 'Analyze Types' "
+            "to find the best defensive and offensive type combinations against that trainer's team."
         )
