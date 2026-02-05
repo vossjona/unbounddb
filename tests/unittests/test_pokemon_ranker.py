@@ -330,8 +330,8 @@ class TestStatScoring:
 class TestGoodMovesSorting:
     """Tests for good moves sorting logic in calculate_offense_score."""
 
-    def test_stab_moves_first(self) -> None:
-        """STAB moves should always come before non-STAB moves."""
+    def test_moves_diversified_by_type_rank(self) -> None:
+        """Moves are diversified by type rank for better coverage spread."""
         moves_df = pl.DataFrame(
             {
                 "pokemon_key": ["test", "test", "test"],
@@ -358,9 +358,12 @@ class TestGoodMovesSorting:
             pokemon_type2=None,
         )
 
-        # Flamethrower (STAB) should be first despite lower rank
-        assert good_moves[0]["move_name"] == "Flamethrower"
-        assert good_moves[0]["is_stab"] is True
+        # Moves are interleaved by type rank for better coverage
+        # Ground (rank 1) comes first, then Ice (rank 2), then Fire (rank 3, STAB)
+        assert good_moves[0]["move_name"] == "Earthquake"
+        assert good_moves[1]["move_name"] == "Ice Beam"
+        assert good_moves[2]["move_name"] == "Flamethrower"
+        assert good_moves[2]["is_stab"] is True
 
     def test_higher_power_within_stab(self) -> None:
         """Within STAB moves, higher effective power ranks better."""
@@ -419,6 +422,102 @@ class TestGoodMovesSorting:
         # Ground (rank 1) should come before Ice (rank 2)
         assert good_moves[0]["move_name"] == "Earthquake"
         assert good_moves[1]["move_name"] == "Ice Beam"
+
+
+class TestMoveDiversification:
+    """Tests for move diversification (max per type, interleaving)."""
+
+    def test_max_three_moves_per_type(self) -> None:
+        """No more than 3 moves per type are returned."""
+        # Create 5 Fire moves
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test"] * 5,
+                "move_key": ["fire1", "fire2", "fire3", "fire4", "fire5"],
+                "move_name": ["Fire Blast", "Flamethrower", "Heat Wave", "Ember", "Flame Wheel"],
+                "move_type": ["Fire"] * 5,
+                "category": ["Special"] * 5,
+                "power": [110, 90, 95, 40, 60],
+                "learn_method": ["tm", "tm", "tm", "level", "level"],
+                "level": [0, 0, 0, 5, 15],
+            }
+        )
+        recommended_types = [{"type": "Fire", "score": 20, "rank": 1}]
+
+        _, good_moves = calculate_offense_score(
+            learnable_moves=moves_df,
+            recommended_types=recommended_types,
+            pokemon_type1="Fire",
+            pokemon_type2=None,
+        )
+
+        # Should return max 3 Fire moves
+        assert len(good_moves) == 3
+        fire_moves = [m for m in good_moves if m["move_type"] == "Fire"]
+        assert len(fire_moves) == 3
+
+    def test_interleaving_multiple_types(self) -> None:
+        """Moves from different types are interleaved for better spread."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test"] * 6,
+                "move_key": ["eq", "drill", "ice", "blizzard", "fire", "flame"],
+                "move_name": ["Earthquake", "Drill Run", "Ice Beam", "Blizzard", "Flamethrower", "Fire Blast"],
+                "move_type": ["Ground", "Ground", "Ice", "Ice", "Fire", "Fire"],
+                "category": ["Physical", "Physical", "Special", "Special", "Special", "Special"],
+                "power": [100, 80, 90, 110, 90, 110],
+                "learn_method": ["level"] * 6,
+                "level": [36, 25, 30, 40, 30, 40],
+            }
+        )
+        recommended_types = [
+            {"type": "Ground", "score": 20, "rank": 1},
+            {"type": "Ice", "score": 15, "rank": 2},
+            {"type": "Fire", "score": 10, "rank": 3},
+        ]
+
+        _, good_moves = calculate_offense_score(
+            learnable_moves=moves_df,
+            recommended_types=recommended_types,
+            pokemon_type1="Normal",
+            pokemon_type2=None,
+        )
+
+        # Should interleave: Ground, Ice, Fire, Ground, Ice, Fire
+        types_in_order = [m["move_type"] for m in good_moves]
+        assert types_in_order == ["Ground", "Ice", "Fire", "Ground", "Ice", "Fire"]
+
+    def test_stab_type_prioritized_in_interleaving(self) -> None:
+        """STAB types are prioritized when ranks are equal."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test", "test"],
+                "move_key": ["eq", "fire"],
+                "move_name": ["Earthquake", "Flamethrower"],
+                "move_type": ["Ground", "Fire"],
+                "category": ["Physical", "Special"],
+                "power": [100, 90],
+                "learn_method": ["level", "tm"],
+                "level": [36, 0],
+            }
+        )
+        # Same rank for both types
+        recommended_types = [
+            {"type": "Ground", "score": 20, "rank": 1},
+            {"type": "Fire", "score": 20, "rank": 1},
+        ]
+
+        # Fire type Pokemon - Flamethrower is STAB
+        _, good_moves = calculate_offense_score(
+            learnable_moves=moves_df,
+            recommended_types=recommended_types,
+            pokemon_type1="Fire",
+            pokemon_type2=None,
+        )
+
+        # Fire (STAB) should come before Ground when ranks are equal
+        assert good_moves[0]["move_name"] == "Flamethrower"
+        assert good_moves[0]["is_stab"] is True
 
 
 class TestEdgeCases:

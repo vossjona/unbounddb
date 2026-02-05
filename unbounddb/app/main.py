@@ -707,7 +707,7 @@ with tab2:
 
                                     # Display moves table with full details
                                     moves_table = []
-                                    for move in good_moves[:8]:  # Show top 8 moves
+                                    for move in good_moves:  # Show all diversified moves (max 15)
                                         stab_str = "Yes" if move["is_stab"] else "No"
                                         learn_str = move["learn_method"]
                                         if move["level"] and move["level"] > 0:

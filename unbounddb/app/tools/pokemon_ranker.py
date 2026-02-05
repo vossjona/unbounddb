@@ -281,10 +281,13 @@ def calculate_offense_score(
         )
     )
 
+    # Diversify moves for better type coverage (max 3 per type, 15 total)
+    diversified_moves = _diversify_moves(good_moves)
+
     # Cap score at 100
     final_score = min(score, 100.0)
 
-    return final_score, good_moves
+    return final_score, diversified_moves
 
 
 def calculate_stat_score(
@@ -372,11 +375,73 @@ def calculate_coverage(
     return covered_keys, len(covered_keys)
 
 
-def _get_top_moves_string(good_moves: list[dict[str, Any]], limit: int = 3) -> str:
+MAX_MOVES_PER_TYPE = 3
+MAX_TOTAL_MOVES = 15
+
+
+def _diversify_moves(
+    good_moves: list[dict[str, Any]],
+    max_per_type: int = MAX_MOVES_PER_TYPE,
+    max_total: int = MAX_TOTAL_MOVES,
+) -> list[dict[str, Any]]:
+    """Diversify moves to show better type coverage.
+
+    Limits moves per type and interleaves types for better spread.
+
+    Args:
+        good_moves: List of good move dicts (already sorted by STAB/rank/power).
+        max_per_type: Maximum moves to include per type.
+        max_total: Maximum total moves to return.
+
+    Returns:
+        Diversified list of moves with better type coverage.
+    """
+    if not good_moves:
+        return []
+
+    # Group moves by type, preserving original sort order within each type
+    moves_by_type: dict[str, list[dict[str, Any]]] = {}
+    for move in good_moves:
+        move_type = move["move_type"]
+        if move_type not in moves_by_type:
+            moves_by_type[move_type] = []
+        if len(moves_by_type[move_type]) < max_per_type:
+            moves_by_type[move_type].append(move)
+
+    # Get type order by best type_rank (lowest rank = best), then by having STAB
+    type_order = sorted(
+        moves_by_type.keys(),
+        key=lambda t: (
+            min(m["type_rank"] for m in moves_by_type[t]),
+            not any(m["is_stab"] for m in moves_by_type[t]),  # STAB types first
+        ),
+    )
+
+    # Interleave: take one from each type in round-robin fashion
+    result: list[dict[str, Any]] = []
+    type_indices: dict[str, int] = dict.fromkeys(type_order, 0)
+
+    while len(result) < max_total:
+        added_any = False
+        for move_type in type_order:
+            if len(result) >= max_total:
+                break
+            idx = type_indices[move_type]
+            if idx < len(moves_by_type[move_type]):
+                result.append(moves_by_type[move_type][idx])
+                type_indices[move_type] = idx + 1
+                added_any = True
+        if not added_any:
+            break  # All types exhausted
+
+    return result
+
+
+def _get_top_moves_string(good_moves: list[dict[str, Any]], limit: int = 5) -> str:
     """Format top moves as a comma-separated string.
 
     Args:
-        good_moves: List of good move dicts (already sorted).
+        good_moves: List of good move dicts (already diversified).
         limit: Maximum number of moves to include.
 
     Returns:
