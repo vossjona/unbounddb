@@ -453,9 +453,9 @@ def get_all_evolutions(
 
 
 def get_available_pokemon_set(
-    filter_config: "LocationFilterConfig",
+    filter_config: "LocationFilterConfig | None",
     db_path: Path | None = None,
-) -> set[str]:
+) -> set[str] | None:
     """Get set of Pokemon names available given game progress filters.
 
     Returns Pokemon whose pre-evolution chain has at least one catch location
@@ -463,11 +463,15 @@ def get_available_pokemon_set(
 
     Args:
         filter_config: Configuration for location filtering based on game progress.
+            If None, returns None to signal that all Pokemon should be included.
         db_path: Optional path to database.
 
     Returns:
-        Set of Pokemon names for O(1) lookup.
+        Set of Pokemon names for O(1) lookup, or None if no filtering should be applied.
     """
+    if filter_config is None:
+        return None
+
     # Import here to avoid circular import
     from unbounddb.app.location_filters import apply_location_filters  # noqa: PLC0415
 

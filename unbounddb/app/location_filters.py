@@ -29,16 +29,20 @@ class LocationFilterConfig:
     level_cap: int | None = None
 
 
-def apply_location_filters(df: pl.DataFrame, config: LocationFilterConfig) -> pl.DataFrame:
+def apply_location_filters(df: pl.DataFrame, config: LocationFilterConfig | None) -> pl.DataFrame:
     """Apply filters to location DataFrame based on game progress.
 
     Args:
         df: DataFrame with columns location_name, encounter_method, encounter_notes, requirement.
         config: Filter configuration specifying which encounters to include/exclude.
+            If None, returns the DataFrame unchanged (no filtering).
 
     Returns:
-        Filtered DataFrame.
+        Filtered DataFrame (or original if config is None).
     """
+    if config is None:
+        return df
+
     result = df
 
     # 1. Surf filter

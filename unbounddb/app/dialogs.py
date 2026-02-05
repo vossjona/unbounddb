@@ -18,12 +18,13 @@ if TYPE_CHECKING:
 
 
 @st.dialog("Catch Locations", width="large")
-def show_locations_dialog(pokemon_name: str, filter_config: "LocationFilterConfig") -> None:
+def show_locations_dialog(pokemon_name: str, filter_config: "LocationFilterConfig | None") -> None:
     """Show catch locations for a Pokemon in a dialog.
 
     Args:
         pokemon_name: The Pokemon to find locations for.
         filter_config: Configuration for location filtering based on game progress.
+            If None, no filtering is applied.
     """
     st.markdown(f"### Locations for {pokemon_name}")
 
@@ -164,12 +165,12 @@ def show_pokemon_by_type_dialog(type_name: str, available_pokemon: set[str] | No
     st.dataframe(table_data, width="stretch", hide_index=True)
 
 
-def trigger_locations_dialog(pokemon_name: str, filter_config: "LocationFilterConfig") -> None:
+def trigger_locations_dialog(pokemon_name: str, filter_config: "LocationFilterConfig | None") -> None:
     """Wrapper to trigger locations dialog from a button click.
 
     Args:
         pokemon_name: The Pokemon to find locations for.
-        filter_config: Configuration for location filtering.
+        filter_config: Configuration for location filtering. If None, no filtering is applied.
     """
     show_locations_dialog(pokemon_name, filter_config)
 

@@ -10,7 +10,13 @@ from unbounddb.app.dialogs import (
     show_learnset_dialog,
     show_locations_dialog,
 )
-from unbounddb.app.game_progress_persistence import load_game_progress, save_game_progress
+from unbounddb.app.game_progress_persistence import (
+    PROFILE_NAMES,
+    get_active_profile_name,
+    load_profile,
+    save_profile,
+    set_active_profile,
+)
 from unbounddb.app.location_filters import LocationFilterConfig, apply_location_filters
 from unbounddb.app.queries import (
     get_all_location_names,
@@ -70,15 +76,51 @@ except Exception as e:
     st.error(f"Error loading database: {e}")
     st.stop()
 
-# Load saved game progress config
-saved_config = load_game_progress()
-
 # Rod level options for index lookup
 ROD_LEVEL_OPTIONS = ["Super Rod", "Good Rod", "Old Rod", "None"]
 
+# Profile selector options: profiles + "None (ignore filters)"
+PROFILE_OPTIONS = [*PROFILE_NAMES, "None (ignore filters)"]
+
+
+def _on_profile_change() -> None:
+    """Callback when profile selector changes."""
+    selected = st.session_state.get("profile_selector")
+    if selected == "None (ignore filters)":
+        set_active_profile(None)
+        # Clear widget keys when switching to "None" profile
+        keys_to_clear = [
+            "global_surf",
+            "global_dive",
+            "global_rock_smash",
+            "global_post_game",
+            "global_rod",
+            "global_level_cap",
+            "global_accessible",
+        ]
+        for key in keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
+    else:
+        set_active_profile(selected)
+        # Load the new profile's values and update session state
+        new_config = load_profile(selected)
+        if new_config:
+            st.session_state["global_surf"] = new_config.has_surf
+            st.session_state["global_dive"] = new_config.has_dive
+            st.session_state["global_rock_smash"] = new_config.has_rock_smash
+            st.session_state["global_post_game"] = new_config.post_game
+            st.session_state["global_rod"] = new_config.rod_level
+            st.session_state["global_level_cap"] = new_config.level_cap or 0
+            st.session_state["global_accessible"] = new_config.accessible_locations or []
+
 
 def _save_current_progress() -> None:
-    """Callback to save current game progress settings."""
+    """Callback to save current game progress settings to the active profile."""
+    active_profile = get_active_profile_name()
+    if active_profile is None:
+        return  # Don't save when "None" profile is selected
+
     config = LocationFilterConfig(
         has_surf=st.session_state.get("global_surf", True),
         has_dive=st.session_state.get("global_dive", True),
@@ -88,66 +130,105 @@ def _save_current_progress() -> None:
         accessible_locations=st.session_state.get("global_accessible") or None,
         level_cap=st.session_state.get("global_level_cap") or None,
     )
-    save_game_progress(config)
+    save_profile(active_profile, config)
 
 
-# Global Game Progress Config (collapsible, before tabs)
-with st.expander("Game Progress", expanded=False):
-    st.caption("Configure your current game progress to filter available Pokemon in the Ranker and Locations tabs.")
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        global_has_surf = st.checkbox(
-            "Surf", value=saved_config.has_surf, key="global_surf", on_change=_save_current_progress
-        )
-        global_has_dive = st.checkbox(
-            "Dive", value=saved_config.has_dive, key="global_dive", on_change=_save_current_progress
-        )
-    with col2:
-        global_has_rock_smash = st.checkbox(
-            "Rock Smash", value=saved_config.has_rock_smash, key="global_rock_smash", on_change=_save_current_progress
-        )
-        global_post_game = st.checkbox(
-            "Post Game", value=saved_config.post_game, key="global_post_game", on_change=_save_current_progress
-        )
-    with col3:
-        global_rod_level = st.selectbox(
-            "Rod Level",
-            options=ROD_LEVEL_OPTIONS,
-            index=ROD_LEVEL_OPTIONS.index(saved_config.rod_level),
-            key="global_rod",
-            on_change=_save_current_progress,
-        )
-    with col4:
-        global_level_cap = st.number_input(
-            "Level Cap",
-            min_value=0,
-            max_value=100,
-            value=saved_config.level_cap or 0,
-            step=5,
-            key="global_level_cap",
-            help="Set to 0 for no limit. Filters Pokemon that evolve above this level.",
-            on_change=_save_current_progress,
-        )
-    with col5:
-        global_accessible_locations = st.multiselect(
-            "Accessible Locations",
-            options=all_locations,
-            default=saved_config.accessible_locations or [],
-            key="global_accessible",
-            help="Leave empty to show all locations",
-            on_change=_save_current_progress,
-        )
+# Get active profile name
+active_profile_name = get_active_profile_name()
 
-# Build global filter config
-global_filter_config = LocationFilterConfig(
-    has_surf=global_has_surf,
-    has_dive=global_has_dive,
-    rod_level=global_rod_level,
-    has_rock_smash=global_has_rock_smash,
-    post_game=global_post_game,
-    accessible_locations=global_accessible_locations if global_accessible_locations else None,
-    level_cap=global_level_cap if global_level_cap > 0 else None,
+# Determine initial index for profile selector
+if active_profile_name is None:
+    profile_index = PROFILE_OPTIONS.index("None (ignore filters)")
+else:
+    profile_index = PROFILE_OPTIONS.index(active_profile_name) if active_profile_name in PROFILE_OPTIONS else 0
+
+# Profile selector
+selected_profile = st.selectbox(
+    "Profile",
+    options=PROFILE_OPTIONS,
+    index=profile_index,
+    key="profile_selector",
+    on_change=_on_profile_change,
+    help="Select a game progress profile or 'None' to show all Pokemon without filtering",
 )
+
+# Determine if filtering is active
+filtering_active = selected_profile != "None (ignore filters)"
+
+# Load saved config for the selected profile (or defaults if None)
+saved_config = load_profile(selected_profile if filtering_active else None)
+
+# Initialize session state from saved config on first load (when keys don't exist)
+if filtering_active and saved_config is not None:
+    if "global_surf" not in st.session_state:
+        st.session_state["global_surf"] = saved_config.has_surf
+    if "global_dive" not in st.session_state:
+        st.session_state["global_dive"] = saved_config.has_dive
+    if "global_rock_smash" not in st.session_state:
+        st.session_state["global_rock_smash"] = saved_config.has_rock_smash
+    if "global_post_game" not in st.session_state:
+        st.session_state["global_post_game"] = saved_config.post_game
+    if "global_rod" not in st.session_state:
+        st.session_state["global_rod"] = saved_config.rod_level
+    if "global_level_cap" not in st.session_state:
+        st.session_state["global_level_cap"] = saved_config.level_cap or 0
+    if "global_accessible" not in st.session_state:
+        st.session_state["global_accessible"] = saved_config.accessible_locations or []
+
+# Global Game Progress Config (collapsible, hidden when profile is None)
+if filtering_active and saved_config is not None:
+    with st.expander("Game Progress", expanded=False):
+        st.caption("Configure your current game progress to filter available Pokemon in the Ranker and Locations tabs.")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            global_has_surf = st.checkbox("Surf", key="global_surf", on_change=_save_current_progress)
+            global_has_dive = st.checkbox("Dive", key="global_dive", on_change=_save_current_progress)
+        with col2:
+            global_has_rock_smash = st.checkbox(
+                "Rock Smash",
+                key="global_rock_smash",
+                on_change=_save_current_progress,
+            )
+            global_post_game = st.checkbox("Post Game", key="global_post_game", on_change=_save_current_progress)
+        with col3:
+            global_rod_level = st.selectbox(
+                "Rod Level",
+                options=ROD_LEVEL_OPTIONS,
+                key="global_rod",
+                on_change=_save_current_progress,
+            )
+        with col4:
+            global_level_cap = st.number_input(
+                "Level Cap",
+                min_value=0,
+                max_value=100,
+                step=5,
+                key="global_level_cap",
+                help="Set to 0 for no limit. Filters Pokemon that evolve above this level.",
+                on_change=_save_current_progress,
+            )
+        with col5:
+            global_accessible_locations = st.multiselect(
+                "Accessible Locations",
+                options=all_locations,
+                key="global_accessible",
+                help="Leave empty to show all locations",
+                on_change=_save_current_progress,
+            )
+
+    # Build global filter config from UI values
+    global_filter_config: LocationFilterConfig | None = LocationFilterConfig(
+        has_surf=global_has_surf,
+        has_dive=global_has_dive,
+        rod_level=global_rod_level,
+        has_rock_smash=global_has_rock_smash,
+        post_game=global_post_game,
+        accessible_locations=global_accessible_locations if global_accessible_locations else None,
+        level_cap=global_level_cap if global_level_cap > 0 else None,
+    )
+else:
+    # No filtering when profile is None
+    global_filter_config = None
 
 # Main content area - 3 tabs with inline controls
 tab1, tab2, tab3 = st.tabs(["Browse", "Trainer Matchups", "Pokemon Locations"])
