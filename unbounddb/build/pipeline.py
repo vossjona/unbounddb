@@ -17,7 +17,7 @@ from unbounddb.ingestion.c_parser import (
 )
 from unbounddb.ingestion.egg_moves_parser import parse_egg_moves_file
 from unbounddb.ingestion.evolution_parser import parse_evolutions_file
-from unbounddb.ingestion.locations_parser import parse_locations_csv
+from unbounddb.ingestion.locations_parser import parse_all_location_csvs
 from unbounddb.ingestion.tm_tutor_parser import parse_tm_tutor_directory
 from unbounddb.settings import settings
 
@@ -259,14 +259,9 @@ def _parse_evolutions(source_dir: Path, curated_dir: Path, log: LogFunc) -> tupl
 
 
 def _parse_locations(source_dir: Path, curated_dir: Path, log: LogFunc) -> tuple[str, Path] | None:
-    """Parse locations.csv to locations parquet."""
-    locations_path = source_dir / "locations.csv"
-    if not locations_path.exists():
-        log(f"Warning: locations.csv not found at {locations_path}")
-        return None
-
-    log("Parsing locations.csv...")
-    df = parse_locations_csv(locations_path)
+    """Parse all location CSVs to unified locations parquet."""
+    log("Parsing location CSVs...")
+    df = parse_all_location_csvs(source_dir)
 
     if len(df) == 0:
         log("  -> No locations found (empty result)")
