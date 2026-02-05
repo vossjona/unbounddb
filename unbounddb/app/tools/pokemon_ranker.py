@@ -175,11 +175,16 @@ def calculate_offense_score(
     recommended_types: list[dict[str, Any]],
     pokemon_type1: str,
     pokemon_type2: str | None,
+    trainer_pokemon: list[dict[str, Any]] | None = None,
 ) -> tuple[float, list[dict[str, Any]]]:
     """Calculate offense score based on learnable moves of recommended types.
 
+    Includes moves that are either:
+    1. One of the top recommended types against the trainer, OR
+    2. Super-effective against any of the trainer's Pokemon
+
     Scoring for each qualifying move:
-        type_rank_bonus = (5 - type_rank) * 2  # Rank 1-4 gives bonus 8,6,4,2
+        type_rank_bonus = (5 - type_rank) * 2  # Rank 1-4 gives bonus 8,6,4,2 (0 for non-ranked)
         stab_bonus = 5 if move.type in [pokemon.type1, pokemon.type2] else 0
         power_bonus = move.power / 20  # 100 power = 5 points
 
@@ -190,12 +195,13 @@ def calculate_offense_score(
         recommended_types: List of dicts with type and rank.
         pokemon_type1: Pokemon's primary type.
         pokemon_type2: Pokemon's secondary type (or None).
+        trainer_pokemon: Optional list of trainer Pokemon dicts with type1, type2.
 
     Returns:
         Tuple of (score, good_moves_list)
         good_moves_list: List of dicts with move details and effective power
     """
-    if learnable_moves.is_empty() or not recommended_types:
+    if learnable_moves.is_empty():
         return 0.0, []
 
     # Build type -> rank lookup
@@ -215,8 +221,22 @@ def calculate_offense_score(
         move_type = row["move_type"]
         move_key = row["move_key"]
 
-        # Skip if not a recommended type or already seen
-        if move_type not in recommended_type_set or move_key in seen_moves:
+        # Skip if already seen
+        if move_key in seen_moves:
+            continue
+
+        # Check if move qualifies: recommended type OR super-effective against trainer
+        is_recommended = move_type in recommended_type_set
+        is_super_effective = False
+
+        if trainer_pokemon and move_type in VALID_TYPES:
+            for trainer_pkmn in trainer_pokemon:
+                eff = get_effectiveness(move_type, trainer_pkmn["type1"], trainer_pkmn["type2"])
+                if eff >= SUPER_EFFECTIVE_THRESHOLD:
+                    is_super_effective = True
+                    break
+
+        if not is_recommended and not is_super_effective:
             continue
 
         seen_moves.add(move_key)
@@ -226,8 +246,8 @@ def calculate_offense_score(
         is_stab = move_type in pokemon_types
 
         # Calculate bonuses
-        type_rank = type_to_rank[move_type]
-        type_rank_bonus = (5 - type_rank) * 2  # 8, 6, 4, 2 for ranks 1-4
+        type_rank = type_to_rank.get(move_type, 5)  # Default rank 5 for non-recommended types
+        type_rank_bonus = max(0, (5 - type_rank) * 2)  # 8, 6, 4, 2 for ranks 1-4, 0 for rank 5+
         stab_bonus = 5 if is_stab else 0
         power_bonus = power / 20  # 100 power = 5 points
 
@@ -463,6 +483,7 @@ def rank_pokemon_for_trainer(
             recommended_types,
             type1,
             type2,
+            trainer_pokemon,
         )
 
         # Stat score
@@ -567,8 +588,9 @@ def get_pokemon_moves_detail(
 
     pokemon_type1, pokemon_type2 = result
 
-    # Get recommended types
+    # Get recommended types and trainer Pokemon
     recommended_types = get_recommended_types(trainer_id, top_n=4, db_path=db_path)
+    trainer_pokemon = get_trainer_pokemon_types(trainer_id, db_path)
 
     # Get Pokemon's learnable moves
     all_moves = get_all_learnable_offensive_moves(db_path)
@@ -583,6 +605,7 @@ def get_pokemon_moves_detail(
         recommended_types,
         pokemon_type1,
         pokemon_type2,
+        trainer_pokemon,
     )
 
     return good_moves

@@ -1,0 +1,25 @@
+{
+  "has_surf": false,
+  "has_dive": false,
+  "rod_level": "Old Rod",
+  "has_rock_smash": false,
+  "post_game": false,
+  "accessible_locations": [
+    "Blizzard City",
+    "Cinder Volcano",
+    "Crater Town (Behind a bookshelf in the PC)",
+    "Dresco Town",
+    "Grim Woods",
+    "Icicle Cave",
+    "KBT Expressway",
+    "Route 1",
+    "Route 2",
+    "Route 3",
+    "Route 3 (Beach)",
+    "Route 4",
+    "Route 5",
+    "Route 6",
+    "Route 7"
+  ],
+  "level_cap": 32
+}

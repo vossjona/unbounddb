@@ -3,6 +3,7 @@ ABOUTME: Provides UI for browsing tables, trainer matchups, and Pokemon location
 
 import streamlit as st
 
+from unbounddb.app.game_progress_persistence import load_game_progress, save_game_progress
 from unbounddb.app.location_filters import LocationFilterConfig, apply_location_filters
 from unbounddb.app.queries import (
     get_all_location_names,
@@ -61,40 +62,72 @@ except Exception as e:
     st.error(f"Error loading database: {e}")
     st.stop()
 
+# Load saved game progress config
+saved_config = load_game_progress()
+
+# Rod level options for index lookup
+ROD_LEVEL_OPTIONS = ["Super Rod", "Good Rod", "Old Rod", "None"]
+
+
+def _save_current_progress() -> None:
+    """Callback to save current game progress settings."""
+    config = LocationFilterConfig(
+        has_surf=st.session_state.get("global_surf", True),
+        has_dive=st.session_state.get("global_dive", True),
+        rod_level=st.session_state.get("global_rod", "Super Rod"),
+        has_rock_smash=st.session_state.get("global_rock_smash", True),
+        post_game=st.session_state.get("global_post_game", True),
+        accessible_locations=st.session_state.get("global_accessible") or None,
+        level_cap=st.session_state.get("global_level_cap") or None,
+    )
+    save_game_progress(config)
+
+
 # Global Game Progress Config (collapsible, before tabs)
 with st.expander("Game Progress", expanded=False):
     st.caption("Configure your current game progress to filter available Pokemon in the Ranker and Locations tabs.")
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
-        global_has_surf = st.checkbox("Surf", value=True, key="global_surf")
-        global_has_dive = st.checkbox("Dive", value=True, key="global_dive")
+        global_has_surf = st.checkbox(
+            "Surf", value=saved_config.has_surf, key="global_surf", on_change=_save_current_progress
+        )
+        global_has_dive = st.checkbox(
+            "Dive", value=saved_config.has_dive, key="global_dive", on_change=_save_current_progress
+        )
     with col2:
-        global_has_rock_smash = st.checkbox("Rock Smash", value=True, key="global_rock_smash")
-        global_post_game = st.checkbox("Post Game", value=True, key="global_post_game")
+        global_has_rock_smash = st.checkbox(
+            "Rock Smash", value=saved_config.has_rock_smash, key="global_rock_smash", on_change=_save_current_progress
+        )
+        global_post_game = st.checkbox(
+            "Post Game", value=saved_config.post_game, key="global_post_game", on_change=_save_current_progress
+        )
     with col3:
         global_rod_level = st.selectbox(
             "Rod Level",
-            options=["Super Rod", "Good Rod", "Old Rod", "None"],
-            index=0,
+            options=ROD_LEVEL_OPTIONS,
+            index=ROD_LEVEL_OPTIONS.index(saved_config.rod_level),
             key="global_rod",
+            on_change=_save_current_progress,
         )
     with col4:
         global_level_cap = st.number_input(
             "Level Cap",
             min_value=0,
             max_value=100,
-            value=0,
+            value=saved_config.level_cap or 0,
             step=5,
             key="global_level_cap",
             help="Set to 0 for no limit. Filters Pokemon that evolve above this level.",
+            on_change=_save_current_progress,
         )
     with col5:
         global_accessible_locations = st.multiselect(
             "Accessible Locations",
             options=all_locations,
-            default=[],
+            default=saved_config.accessible_locations or [],
             key="global_accessible",
             help="Leave empty to show all locations",
+            on_change=_save_current_progress,
         )
 
 # Build global filter config
