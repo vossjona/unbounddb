@@ -1,9 +1,11 @@
 # ABOUTME: Unit tests for Pokemon ranker scoring functions.
-# ABOUTME: Tests defense, offense, and stat scoring logic for trainer matchups.
+# ABOUTME: Tests defense, offense, stat, BST scoring, and coverage logic for trainer matchups.
 
 import polars as pl
 
 from unbounddb.app.tools.pokemon_ranker import (
+    calculate_bst_score,
+    calculate_coverage,
     calculate_defense_score,
     calculate_offense_score,
     calculate_stat_score,
@@ -131,7 +133,6 @@ class TestOffenseScoring:
             recommended_types=recommended_types,
             pokemon_type1="Ground",
             pokemon_type2=None,
-            move_category_pref=None,
         )
 
         # Earthquake should be first (STAB)
@@ -160,7 +161,6 @@ class TestOffenseScoring:
             recommended_types=recommended_types,
             pokemon_type1="Normal",
             pokemon_type2=None,
-            move_category_pref=None,
         )
 
         # Higher power move should have higher effective power
@@ -193,7 +193,6 @@ class TestOffenseScoring:
             recommended_types=recommended_types,
             pokemon_type1="Normal",  # Neither is STAB
             pokemon_type2=None,
-            move_category_pref=None,
         )
 
         # Ground move should come before Ice move due to better rank
@@ -222,7 +221,6 @@ class TestOffenseScoring:
             recommended_types=recommended_types,
             pokemon_type1="Normal",
             pokemon_type2=None,
-            move_category_pref=None,
         )
 
         assert score == 0.0
@@ -248,49 +246,10 @@ class TestOffenseScoring:
             recommended_types=[],
             pokemon_type1="Ground",
             pokemon_type2=None,
-            move_category_pref=None,
         )
 
         assert score == 0.0
         assert good_moves == []
-
-    def test_category_preference_bonus(self) -> None:
-        """Move category preference adds bonus points."""
-        # Use only a Physical move to test that category bonus is applied
-        moves_df = pl.DataFrame(
-            {
-                "pokemon_key": ["test"],
-                "move_key": ["earthquake"],
-                "move_name": ["Earthquake"],
-                "move_type": ["Ground"],
-                "category": ["Physical"],
-                "power": [100],
-                "learn_method": ["level"],
-                "level": [36],
-            }
-        )
-        recommended_types = [{"type": "Ground", "score": 20, "rank": 1}]
-
-        # With Physical preference - should get category bonus
-        score_phys, _ = calculate_offense_score(
-            learnable_moves=moves_df,
-            recommended_types=recommended_types,
-            pokemon_type1="Normal",
-            pokemon_type2=None,
-            move_category_pref="Use Physical moves",
-        )
-
-        # With Special preference - no category bonus for Physical move
-        score_spec, _ = calculate_offense_score(
-            learnable_moves=moves_df,
-            recommended_types=recommended_types,
-            pokemon_type1="Normal",
-            pokemon_type2=None,
-            move_category_pref="Use Special moves",
-        )
-
-        # Physical preference should score higher for Physical move
-        assert score_phys > score_spec
 
 
 class TestStatScoring:
@@ -394,7 +353,6 @@ class TestGoodMovesSorting:
             recommended_types=recommended_types,
             pokemon_type1="Fire",
             pokemon_type2=None,
-            move_category_pref=None,
         )
 
         # Flamethrower (STAB) should be first despite lower rank
@@ -422,7 +380,6 @@ class TestGoodMovesSorting:
             recommended_types=recommended_types,
             pokemon_type1="Fire",
             pokemon_type2=None,
-            move_category_pref=None,
         )
 
         # Both are STAB, Flamethrower should be first (higher power)
@@ -454,7 +411,6 @@ class TestGoodMovesSorting:
             recommended_types=recommended_types,
             pokemon_type1="Normal",
             pokemon_type2=None,
-            move_category_pref=None,
         )
 
         # Ground (rank 1) should come before Ice (rank 2)
@@ -487,7 +443,6 @@ class TestEdgeCases:
             recommended_types=recommended_types,
             pokemon_type1="Normal",
             pokemon_type2=None,
-            move_category_pref=None,
         )
 
         assert score == 0.0
@@ -514,7 +469,6 @@ class TestEdgeCases:
             recommended_types=recommended_types,
             pokemon_type1="Electric",
             pokemon_type2=None,  # Monotype
-            move_category_pref=None,
         )
 
         assert good_moves[0]["is_stab"] is True
@@ -545,7 +499,6 @@ class TestEdgeCases:
             recommended_types=recommended_types,
             pokemon_type1="Ground",
             pokemon_type2="Dragon",
-            move_category_pref=None,
         )
 
         # Both moves should be STAB
@@ -583,7 +536,6 @@ class TestEdgeCases:
             recommended_types=recommended_types,
             pokemon_type1="Ground",
             pokemon_type2=None,
-            move_category_pref=None,
         )
 
         # Should only count Earthquake once
@@ -615,7 +567,6 @@ class TestScoreCapping:
             recommended_types=recommended_types,
             pokemon_type1="Ground",
             pokemon_type2=None,
-            move_category_pref=None,
         )
 
         assert score <= 100.0
@@ -637,3 +588,198 @@ class TestScoreCapping:
             trainer_move_types=["Fire", "Fighting", "Rock", "Steel"],
         )
         assert 0 <= score_low <= 100
+
+
+class TestBSTScoring:
+    """Tests for calculate_bst_score function."""
+
+    def test_high_bst_scores_higher(self) -> None:
+        """Pokemon with 600 BST scores higher than 400 BST."""
+        high_score = calculate_bst_score(600)
+        low_score = calculate_bst_score(400)
+        assert high_score > low_score
+
+    def test_bst_normalized_to_100(self) -> None:
+        """BST score is capped at 0-100 range."""
+        # Below minimum (300) should be 0
+        score_low = calculate_bst_score(200)
+        assert score_low == 0.0
+
+        # At minimum should be 0
+        score_min = calculate_bst_score(300)
+        assert score_min == 0.0
+
+        # At maximum should be 100
+        score_max = calculate_bst_score(600)
+        assert score_max == 100.0
+
+        # Above maximum should be capped at 100
+        score_over = calculate_bst_score(700)
+        assert score_over == 100.0
+
+    def test_legendary_bst_caps_at_100(self) -> None:
+        """BST >= 600 returns 100."""
+        score = calculate_bst_score(680)  # Legendary-level BST
+        assert score == 100.0
+
+    def test_midrange_bst(self) -> None:
+        """Midrange BST gives expected score."""
+        # 450 is halfway between 300 and 600
+        score = calculate_bst_score(450)
+        assert score == 50.0
+
+    def test_typical_evolution_bst_difference(self) -> None:
+        """Evolved Pokemon scores significantly higher than pre-evolution."""
+        # Typhlosion (534) vs Quilava (405) - typical evolution difference
+        evolved_score = calculate_bst_score(534)
+        pre_evo_score = calculate_bst_score(405)
+
+        # Should be ~43 point difference in BST score
+        assert evolved_score - pre_evo_score > 40
+        assert evolved_score > 70  # Typhlosion should score well
+        assert pre_evo_score < 40  # Quilava should score lower
+
+
+class TestCoverage:
+    """Tests for calculate_coverage function."""
+
+    def test_super_effective_move_covers_pokemon(self) -> None:
+        """Ground move covers Electric-type trainer Pokemon."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test"],
+                "move_key": ["earthquake"],
+                "move_name": ["Earthquake"],
+                "move_type": ["Ground"],
+                "category": ["Physical"],
+                "power": [100],
+                "learn_method": ["level"],
+                "level": [36],
+            }
+        )
+        trainer_pokemon = [
+            {"pokemon_key": "pikachu", "type1": "Electric", "type2": None, "slot": 1},
+        ]
+
+        covered_keys, count = calculate_coverage(moves_df, trainer_pokemon)
+
+        assert "pikachu" in covered_keys
+        assert count == 1
+
+    def test_no_super_effective_not_covered(self) -> None:
+        """Normal moves don't cover anything super-effectively."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test"],
+                "move_key": ["tackle"],
+                "move_name": ["Tackle"],
+                "move_type": ["Normal"],
+                "category": ["Physical"],
+                "power": [40],
+                "learn_method": ["level"],
+                "level": [1],
+            }
+        )
+        trainer_pokemon = [
+            {"pokemon_key": "pikachu", "type1": "Electric", "type2": None, "slot": 1},
+            {"pokemon_key": "bulbasaur", "type1": "Grass", "type2": "Poison", "slot": 2},
+        ]
+
+        covered_keys, count = calculate_coverage(moves_df, trainer_pokemon)
+
+        assert covered_keys == []
+        assert count == 0
+
+    def test_coverage_count_correct(self) -> None:
+        """Coverage count matches number of covered Pokemon."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test", "test"],
+                "move_key": ["earthquake", "ice_beam"],
+                "move_name": ["Earthquake", "Ice Beam"],
+                "move_type": ["Ground", "Ice"],
+                "category": ["Physical", "Special"],
+                "power": [100, 90],
+                "learn_method": ["level", "tm"],
+                "level": [36, 0],
+            }
+        )
+        trainer_pokemon = [
+            {"pokemon_key": "pikachu", "type1": "Electric", "type2": None, "slot": 1},  # Covered by Ground
+            {"pokemon_key": "dragonite", "type1": "Dragon", "type2": "Flying", "slot": 2},  # Covered by Ice (4x)
+            {"pokemon_key": "snorlax", "type1": "Normal", "type2": None, "slot": 3},  # Not covered
+        ]
+
+        covered_keys, count = calculate_coverage(moves_df, trainer_pokemon)
+
+        assert count == 2
+        assert "pikachu" in covered_keys
+        assert "dragonite" in covered_keys
+        assert "snorlax" not in covered_keys
+
+    def test_dual_type_weakness_counts(self) -> None:
+        """4x weakness still counts as covered."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test"],
+                "move_key": ["ice_beam"],
+                "move_name": ["Ice Beam"],
+                "move_type": ["Ice"],
+                "category": ["Special"],
+                "power": [90],
+                "learn_method": ["tm"],
+                "level": [0],
+            }
+        )
+        # Dragon/Flying is 4x weak to Ice
+        trainer_pokemon = [
+            {"pokemon_key": "dragonite", "type1": "Dragon", "type2": "Flying", "slot": 1},
+        ]
+
+        covered_keys, count = calculate_coverage(moves_df, trainer_pokemon)
+
+        assert "dragonite" in covered_keys
+        assert count == 1
+
+    def test_empty_moves_no_coverage(self) -> None:
+        """Empty move list means no coverage."""
+        empty_df = pl.DataFrame(
+            schema={
+                "pokemon_key": pl.String,
+                "move_key": pl.String,
+                "move_name": pl.String,
+                "move_type": pl.String,
+                "category": pl.String,
+                "power": pl.Int64,
+                "learn_method": pl.String,
+                "level": pl.Int64,
+            }
+        )
+        trainer_pokemon = [
+            {"pokemon_key": "pikachu", "type1": "Electric", "type2": None, "slot": 1},
+        ]
+
+        covered_keys, count = calculate_coverage(empty_df, trainer_pokemon)
+
+        assert covered_keys == []
+        assert count == 0
+
+    def test_empty_trainer_team_no_coverage(self) -> None:
+        """Empty trainer team means no coverage."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test"],
+                "move_key": ["earthquake"],
+                "move_name": ["Earthquake"],
+                "move_type": ["Ground"],
+                "category": ["Physical"],
+                "power": [100],
+                "learn_method": ["level"],
+                "level": [36],
+            }
+        )
+
+        covered_keys, count = calculate_coverage(moves_df, [])
+
+        assert covered_keys == []
+        assert count == 0

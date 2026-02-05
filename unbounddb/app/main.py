@@ -30,6 +30,7 @@ from unbounddb.app.tools.phys_spec_analyzer import (
     analyze_trainer_offensive_profile,
 )
 from unbounddb.app.tools.pokemon_ranker import (
+    get_coverage_detail,
     get_pokemon_moves_detail,
     get_recommended_types,
     rank_pokemon_for_trainer,
@@ -603,7 +604,9 @@ with tab3:
                                     "Rank": row["rank"],
                                     "Pokemon": row["name"],
                                     "Types": type_combo,
+                                    "BST": row["bst"],
                                     "Score": row["total_score"],
+                                    "Covers": row["covers"],
                                     "Top Moves": row["top_moves"],
                                 }
                             )
@@ -625,13 +628,15 @@ with tab3:
                                 f"#{row['rank']} {row['name']} ({type_combo}) - Score: {row['total_score']}"
                             ):
                                 # Score breakdown
-                                col1, col2, col3 = st.columns(3)
+                                col1, col2, col3, col4 = st.columns(4)
                                 with col1:
                                     st.metric("Defense Score", row["defense_score"])
                                 with col2:
                                     st.metric("Offense Score", row["offense_score"])
                                 with col3:
                                     st.metric("Stat Score", row["stat_score"])
+                                with col4:
+                                    st.metric("BST Score", row["bst_score"])
 
                                 # Defensive typing info
                                 st.markdown("**Defensive Typing:**")
@@ -642,6 +647,26 @@ with tab3:
                                     st.write(f"Resistances: {row['resistances']}")
                                 with def_col3:
                                     st.write(f"Weaknesses: {row['weaknesses']}")
+
+                                # Coverage breakdown
+                                coverage_detail = get_coverage_detail(row["pokemon_key"], trainer_id)
+                                if coverage_detail:
+                                    covered_count = sum(1 for c in coverage_detail if c["is_covered"])
+                                    total_count = len(coverage_detail)
+                                    st.markdown(f"**Coverage:** {covered_count}/{total_count}")
+
+                                    for cov in coverage_detail:
+                                        type_str = cov["type1"]
+                                        if cov["type2"]:
+                                            type_str = f"{cov['type1']}/{cov['type2']}"
+                                        if cov["is_covered"]:
+                                            eff_str = f"{cov['effectiveness']}x"
+                                            st.write(
+                                                f"- ✓ {cov['pokemon_key']} ({type_str}) - "
+                                                f"{cov['best_move_type']} ({eff_str})"
+                                            )
+                                        else:
+                                            st.write(f"- ✗ {cov['pokemon_key']} ({type_str})")
 
                                 # Recommended moves detail
                                 good_moves = get_pokemon_moves_detail(row["pokemon_key"], trainer_id)

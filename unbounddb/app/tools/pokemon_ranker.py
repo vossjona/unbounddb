@@ -8,7 +8,7 @@ import polars as pl
 
 from unbounddb.app.queries import _get_conn
 from unbounddb.app.tools.defensive_suggester import get_trainer_move_types
-from unbounddb.app.tools.offensive_suggester import analyze_single_type_offense
+from unbounddb.app.tools.offensive_suggester import analyze_single_type_offense, get_trainer_pokemon_types
 from unbounddb.app.tools.phys_spec_analyzer import analyze_trainer_defensive_profile
 from unbounddb.utils.type_chart import (
     IMMUNITY_VALUE,
@@ -175,7 +175,6 @@ def calculate_offense_score(
     recommended_types: list[dict[str, Any]],
     pokemon_type1: str,
     pokemon_type2: str | None,
-    move_category_pref: str | None,
 ) -> tuple[float, list[dict[str, Any]]]:
     """Calculate offense score based on learnable moves of recommended types.
 
@@ -183,7 +182,6 @@ def calculate_offense_score(
         type_rank_bonus = (5 - type_rank) * 2  # Rank 1-4 gives bonus 8,6,4,2
         stab_bonus = 5 if move.type in [pokemon.type1, pokemon.type2] else 0
         power_bonus = move.power / 20  # 100 power = 5 points
-        category_bonus = 3 if move matches category preference else 0
 
     Score is capped at 100.
 
@@ -192,7 +190,6 @@ def calculate_offense_score(
         recommended_types: List of dicts with type and rank.
         pokemon_type1: Pokemon's primary type.
         pokemon_type2: Pokemon's secondary type (or None).
-        move_category_pref: "Physical", "Special", or None.
 
     Returns:
         Tuple of (score, good_moves_list)
@@ -234,15 +231,7 @@ def calculate_offense_score(
         stab_bonus = 5 if is_stab else 0
         power_bonus = power / 20  # 100 power = 5 points
 
-        # Category preference bonus
-        category_bonus = 0
-        if move_category_pref:
-            matches_physical = move_category_pref == "Use Physical moves" and category == "Physical"
-            matches_special = move_category_pref == "Use Special moves" and category == "Special"
-            if matches_physical or matches_special:
-                category_bonus = 3
-
-        move_score = type_rank_bonus + stab_bonus + power_bonus + category_bonus
+        move_score = type_rank_bonus + stab_bonus + power_bonus
         score += move_score
 
         # Effective power for display (STAB multiplier)
@@ -307,6 +296,61 @@ def calculate_stat_score(
         return (normalized_attack + normalized_sp_attack) / 2
 
 
+def calculate_bst_score(bst: int) -> float:
+    """Calculate BST score normalized to 0-100.
+
+    Args:
+        bst: Base Stat Total.
+
+    Returns:
+        Score from 0-100. Practical range 300-600, legendaries cap at 100.
+    """
+    min_bst = 300  # Weak Pokemon floor
+    max_bst = 600  # Strong non-legendary ceiling
+
+    normalized = ((bst - min_bst) / (max_bst - min_bst)) * 100
+    return max(0.0, min(100.0, normalized))
+
+
+def calculate_coverage(
+    learnable_moves: pl.DataFrame,
+    trainer_pokemon: list[dict[str, Any]],
+) -> tuple[list[str], int]:
+    """Calculate which trainer Pokemon can be hit super-effectively.
+
+    Args:
+        learnable_moves: Pokemon's learnable moves (with move_type column).
+        trainer_pokemon: List of trainer Pokemon dicts with type1, type2, pokemon_key.
+
+    Returns:
+        Tuple of (covered_pokemon_keys, coverage_count)
+        covered_pokemon_keys: List of pokemon_key strings that are covered
+    """
+    if learnable_moves.is_empty() or not trainer_pokemon:
+        return [], 0
+
+    # Extract unique move types from learnable moves
+    move_types = set(learnable_moves["move_type"].unique().to_list())
+
+    covered_keys: list[str] = []
+
+    for trainer_pkmn in trainer_pokemon:
+        pokemon_key = trainer_pkmn["pokemon_key"]
+        type1 = trainer_pkmn["type1"]
+        type2 = trainer_pkmn["type2"]
+
+        # Check if any move type is super-effective (>=2x) against this Pokemon
+        for move_type in move_types:
+            if move_type not in VALID_TYPES:
+                continue
+            effectiveness = get_effectiveness(move_type, type1, type2)
+            if effectiveness >= SUPER_EFFECTIVE_THRESHOLD:
+                covered_keys.append(pokemon_key)
+                break  # Once covered, no need to check other move types
+
+    return covered_keys, len(covered_keys)
+
+
 def _get_top_moves_string(good_moves: list[dict[str, Any]], limit: int = 3) -> str:
     """Format top moves as a comma-separated string.
 
@@ -332,7 +376,7 @@ def rank_pokemon_for_trainer(
     """Rank all Pokemon for a trainer matchup using composite scoring.
 
     Scoring weights:
-        defense_score * 0.35 + offense_score * 0.45 + stat_score * 0.20
+        defense_score * 0.30 + offense_score * 0.40 + stat_score * 0.15 + bst_score * 0.15
 
     Args:
         trainer_id: ID of the trainer to analyze.
@@ -341,16 +385,19 @@ def rank_pokemon_for_trainer(
 
     Returns:
         DataFrame with columns:
-        - rank, pokemon_key, name, type1, type2
-        - total_score, defense_score, offense_score, stat_score
+        - rank, pokemon_key, name, type1, type2, bst
+        - total_score, defense_score, offense_score, stat_score, bst_score
         - immunities, resistances, weaknesses (comma-separated strings)
         - top_moves (comma-separated string)
+        - covers (comma-separated list of covered trainer Pokemon)
+        - coverage_count (integer count of covered Pokemon)
     """
     # Get trainer analysis data
     move_types = get_trainer_move_types(trainer_id, db_path)
     recommended_types = get_recommended_types(trainer_id, top_n=4, db_path=db_path)
     defensive_profile = analyze_trainer_defensive_profile(trainer_id, db_path)
     phys_spec_rec = defensive_profile.get("recommendation", "Either works")
+    trainer_pokemon = get_trainer_pokemon_types(trainer_id, db_path)
 
     # Get all Pokemon and moves
     all_pokemon = get_all_pokemon_with_stats(db_path)
@@ -364,14 +411,18 @@ def rank_pokemon_for_trainer(
                 "name": pl.String,
                 "type1": pl.String,
                 "type2": pl.String,
+                "bst": pl.Int64,
                 "total_score": pl.Float64,
                 "defense_score": pl.Float64,
                 "offense_score": pl.Float64,
                 "stat_score": pl.Float64,
+                "bst_score": pl.Float64,
                 "immunities": pl.String,
                 "resistances": pl.String,
                 "weaknesses": pl.String,
                 "top_moves": pl.String,
+                "covers": pl.String,
+                "coverage_count": pl.Int64,
             }
         )
 
@@ -385,6 +436,7 @@ def rank_pokemon_for_trainer(
 
     # Score each Pokemon
     results: list[dict[str, Any]] = []
+    total_trainer_pokemon = len(trainer_pokemon)
 
     for row in all_pokemon.iter_rows(named=True):
         pokemon_key = row["pokemon_key"]
@@ -392,6 +444,7 @@ def rank_pokemon_for_trainer(
         type2 = row["type2"]
         attack = row["attack"]
         sp_attack = row["sp_attack"]
+        bst = row["bst"]
 
         # Defense score
         defense_score, immunities, resistances, weaknesses = calculate_defense_score(type1, type2, move_types)
@@ -403,14 +456,22 @@ def rank_pokemon_for_trainer(
             recommended_types,
             type1,
             type2,
-            phys_spec_rec,
         )
 
         # Stat score
         stat_score = calculate_stat_score(attack, sp_attack, phys_spec_rec)
 
-        # Composite score
-        total_score = (defense_score * 0.35) + (offense_score * 0.45) + (stat_score * 0.20)
+        # BST score
+        bst_score = calculate_bst_score(bst)
+
+        # Coverage calculation
+        covered_keys, coverage_count = calculate_coverage(pokemon_moves, trainer_pokemon)
+
+        # Composite score with new weights
+        total_score = defense_score * 0.30 + offense_score * 0.40 + stat_score * 0.15 + bst_score * 0.15
+
+        # Format coverage string
+        covers_str = f"{coverage_count}/{total_trainer_pokemon}" if coverage_count > 0 else "0"
 
         results.append(
             {
@@ -418,14 +479,19 @@ def rank_pokemon_for_trainer(
                 "name": row["name"],
                 "type1": type1,
                 "type2": type2,
+                "bst": bst,
                 "total_score": round(total_score, 1),
                 "defense_score": round(defense_score, 1),
                 "offense_score": round(offense_score, 1),
                 "stat_score": round(stat_score, 1),
+                "bst_score": round(bst_score, 1),
                 "immunities": ", ".join(immunities) if immunities else "-",
                 "resistances": ", ".join(resistances) if resistances else "-",
                 "weaknesses": ", ".join(weaknesses) if weaknesses else "-",
                 "top_moves": _get_top_moves_string(good_moves),
+                "covers": covers_str,
+                "coverage_count": coverage_count,
+                "covered_pokemon": covered_keys,  # Keep full list for UI detail
             }
         )
 
@@ -444,14 +510,19 @@ def rank_pokemon_for_trainer(
             "name",
             "type1",
             "type2",
+            "bst",
             "total_score",
             "defense_score",
             "offense_score",
             "stat_score",
+            "bst_score",
             "immunities",
             "resistances",
             "weaknesses",
             "top_moves",
+            "covers",
+            "coverage_count",
+            "covered_pokemon",
         ]
     )
 
@@ -489,10 +560,8 @@ def get_pokemon_moves_detail(
 
     pokemon_type1, pokemon_type2 = result
 
-    # Get recommended types and defensive profile
+    # Get recommended types
     recommended_types = get_recommended_types(trainer_id, top_n=4, db_path=db_path)
-    defensive_profile = analyze_trainer_defensive_profile(trainer_id, db_path)
-    phys_spec_rec = defensive_profile.get("recommendation", "Either works")
 
     # Get Pokemon's learnable moves
     all_moves = get_all_learnable_offensive_moves(db_path)
@@ -507,7 +576,81 @@ def get_pokemon_moves_detail(
         recommended_types,
         pokemon_type1,
         pokemon_type2,
-        phys_spec_rec,
     )
 
     return good_moves
+
+
+def get_coverage_detail(
+    pokemon_key: str,
+    trainer_id: int,
+    db_path: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Get detailed coverage breakdown for a Pokemon against trainer's team.
+
+    Args:
+        pokemon_key: The Pokemon's key.
+        trainer_id: ID of the trainer to analyze.
+        db_path: Optional path to database.
+
+    Returns:
+        List of dicts with coverage details per trainer Pokemon:
+        - pokemon_key, type1, type2, is_covered, best_move_type, effectiveness
+    """
+    # Get trainer's Pokemon
+    trainer_pokemon = get_trainer_pokemon_types(trainer_id, db_path)
+
+    if not trainer_pokemon:
+        return []
+
+    # Get Pokemon's learnable moves
+    all_moves = get_all_learnable_offensive_moves(db_path)
+    pokemon_moves = all_moves.filter(pl.col("pokemon_key") == pokemon_key)
+
+    if pokemon_moves.is_empty():
+        # No moves - none covered
+        return [
+            {
+                "pokemon_key": tp["pokemon_key"],
+                "type1": tp["type1"],
+                "type2": tp["type2"],
+                "is_covered": False,
+                "best_move_type": None,
+                "effectiveness": 1.0,
+            }
+            for tp in trainer_pokemon
+        ]
+
+    # Extract unique move types
+    move_types = set(pokemon_moves["move_type"].unique().to_list())
+
+    results: list[dict[str, Any]] = []
+
+    for trainer_pkmn in trainer_pokemon:
+        pkmn_key = trainer_pkmn["pokemon_key"]
+        type1 = trainer_pkmn["type1"]
+        type2 = trainer_pkmn["type2"]
+
+        best_eff = 0.0
+        best_type = None
+
+        for move_type in move_types:
+            if move_type not in VALID_TYPES:
+                continue
+            eff = get_effectiveness(move_type, type1, type2)
+            if eff > best_eff:
+                best_eff = eff
+                best_type = move_type
+
+        results.append(
+            {
+                "pokemon_key": pkmn_key,
+                "type1": type1,
+                "type2": type2,
+                "is_covered": best_eff >= SUPER_EFFECTIVE_THRESHOLD,
+                "best_move_type": best_type,
+                "effectiveness": best_eff,
+            }
+        )
+
+    return results
