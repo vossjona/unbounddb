@@ -29,6 +29,11 @@ from unbounddb.app.tools.phys_spec_analyzer import (
     analyze_trainer_defensive_profile,
     analyze_trainer_offensive_profile,
 )
+from unbounddb.app.tools.pokemon_ranker import (
+    get_pokemon_moves_detail,
+    get_recommended_types,
+    rank_pokemon_for_trainer,
+)
 from unbounddb.settings import settings
 
 st.set_page_config(
@@ -214,8 +219,10 @@ with tab3:
             if team_names:
                 st.markdown(f"**Trainer's Team:** {', '.join(team_names)}")
 
-            # Nested tabs for defensive/offensive/physical-special analysis
-            def_tab, off_tab, phys_spec_tab = st.tabs(["Defensive Analysis", "Offensive Analysis", "Physical/Special"])
+            # Nested tabs for defensive/offensive/physical-special analysis and Pokemon ranker
+            def_tab, off_tab, phys_spec_tab, ranker_tab = st.tabs(
+                ["Defensive Analysis", "Offensive Analysis", "Physical/Special", "Pokemon Ranker"]
+            )
 
             # --- DEFENSIVE ANALYSIS TAB ---
             with def_tab:
@@ -546,6 +553,119 @@ with tab3:
                                 sp_defense = pdetail["sp_defense"]
 
                                 st.write(f"- **{pokemon_key}** (Def: {defense}, SpD: {sp_defense}): {profile}")
+
+            # --- POKEMON RANKER TAB ---
+            with ranker_tab:
+                if not pokemon_types:
+                    st.warning("No Pokemon found for this trainer's team.")
+                else:
+                    st.subheader("Recommended Pokemon")
+                    st.caption(
+                        "Best Pokemon to use against this trainer, ranked by defensive typing, "
+                        "offensive moves, and stat alignment."
+                    )
+
+                    # Get analysis summary
+                    recommended_type_list = get_recommended_types(trainer_id)
+                    defensive_profile_ranker = analyze_trainer_defensive_profile(trainer_id)
+                    phys_spec_rec = defensive_profile_ranker.get("recommendation", "Either works")
+
+                    # Display analysis summary
+                    if recommended_type_list:
+                        top_types_str = ", ".join([rt["type"] for rt in recommended_type_list])
+                        st.markdown(f"**Top Attack Types:** {top_types_str}")
+                    st.markdown(f"**Stat Focus:** {phys_spec_rec}")
+
+                    st.divider()
+
+                    # Show all checkbox
+                    show_all_pokemon = st.checkbox(
+                        "Show all Pokemon (default: top 50)",
+                        value=False,
+                        key="ranker_show_all",
+                    )
+
+                    # Get rankings
+                    limit = 0 if show_all_pokemon else 50
+                    rankings_df = rank_pokemon_for_trainer(trainer_id, top_n=limit)
+
+                    if rankings_df.is_empty():
+                        st.warning("Could not rank Pokemon. Make sure move data is available.")
+                    else:
+                        # Create display table
+                        ranker_table_data = []
+                        for row in rankings_df.iter_rows(named=True):
+                            type_combo = row["type1"]
+                            if row["type2"]:
+                                type_combo = f"{row['type1']}/{row['type2']}"
+                            ranker_table_data.append(
+                                {
+                                    "Rank": row["rank"],
+                                    "Pokemon": row["name"],
+                                    "Types": type_combo,
+                                    "Score": row["total_score"],
+                                    "Top Moves": row["top_moves"],
+                                }
+                            )
+
+                        st.dataframe(
+                            ranker_table_data,
+                            width="stretch",
+                            hide_index=True,
+                        )
+
+                        # Expanders for top Pokemon details
+                        st.subheader("Detailed Breakdown")
+                        for row in rankings_df.head(10).iter_rows(named=True):
+                            type_combo = row["type1"]
+                            if row["type2"]:
+                                type_combo = f"{row['type1']}/{row['type2']}"
+
+                            with st.expander(
+                                f"#{row['rank']} {row['name']} ({type_combo}) - Score: {row['total_score']}"
+                            ):
+                                # Score breakdown
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("Defense Score", row["defense_score"])
+                                with col2:
+                                    st.metric("Offense Score", row["offense_score"])
+                                with col3:
+                                    st.metric("Stat Score", row["stat_score"])
+
+                                # Defensive typing info
+                                st.markdown("**Defensive Typing:**")
+                                def_col1, def_col2, def_col3 = st.columns(3)
+                                with def_col1:
+                                    st.write(f"Immunities: {row['immunities']}")
+                                with def_col2:
+                                    st.write(f"Resistances: {row['resistances']}")
+                                with def_col3:
+                                    st.write(f"Weaknesses: {row['weaknesses']}")
+
+                                # Recommended moves detail
+                                good_moves = get_pokemon_moves_detail(row["pokemon_key"], trainer_id)
+                                if good_moves:
+                                    st.markdown("**Recommended Moves:**")
+                                    moves_table = []
+                                    for move in good_moves[:8]:  # Show top 8 moves
+                                        stab_str = "Yes" if move["is_stab"] else "No"
+                                        learn_str = move["learn_method"]
+                                        if move["level"] and move["level"] > 0:
+                                            learn_str = f"{move['learn_method']} ({move['level']})"
+                                        moves_table.append(
+                                            {
+                                                "Move": move["move_name"],
+                                                "Type": move["move_type"],
+                                                "Power": move["power"],
+                                                "Category": move["category"],
+                                                "STAB": stab_str,
+                                                "Learn": learn_str,
+                                            }
+                                        )
+                                    st.dataframe(moves_table, hide_index=True, width="stretch")
+                                else:
+                                    st.write("No recommended moves found for this Pokemon.")
 
         else:
             st.error("Could not load trainer information.")

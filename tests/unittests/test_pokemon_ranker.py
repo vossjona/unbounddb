@@ -1,0 +1,639 @@
+# ABOUTME: Unit tests for Pokemon ranker scoring functions.
+# ABOUTME: Tests defense, offense, and stat scoring logic for trainer matchups.
+
+import polars as pl
+
+from unbounddb.app.tools.pokemon_ranker import (
+    calculate_defense_score,
+    calculate_offense_score,
+    calculate_stat_score,
+)
+
+
+class TestDefenseScoring:
+    """Tests for calculate_defense_score function."""
+
+    def test_immune_type_scores_high(self) -> None:
+        """Pokemon with immunity to trainer's moves scores high."""
+        # Ground type is immune to Electric
+        score, immunities, _resistances, weaknesses = calculate_defense_score(
+            type1="Ground",
+            type2=None,
+            trainer_move_types=["Electric"],
+        )
+        assert score > 50  # Should be above average
+        assert "Electric" in immunities
+        assert len(weaknesses) == 0
+
+    def test_weak_type_scores_low(self) -> None:
+        """Pokemon weak to trainer's moves scores low."""
+        # Grass is weak to Fire
+        score, immunities, _resistances, weaknesses = calculate_defense_score(
+            type1="Grass",
+            type2=None,
+            trainer_move_types=["Fire"],
+        )
+        assert score < 60  # Should be below neutral (one weakness)
+        assert "Fire" in weaknesses
+        assert len(immunities) == 0
+
+    def test_resistance_scores_medium(self) -> None:
+        """Pokemon resisting trainer's moves scores moderately."""
+        # Fire resists Fire
+        score, _immunities, resistances, _weaknesses = calculate_defense_score(
+            type1="Fire",
+            type2=None,
+            trainer_move_types=["Fire"],
+        )
+        assert 40 < score < 80  # Should be moderate
+        assert "Fire" in resistances
+
+    def test_score_normalized_0_to_100(self) -> None:
+        """Score is always within 0-100 range."""
+        # Test with many weaknesses
+        score_weak, _, _, _ = calculate_defense_score(
+            type1="Ice",
+            type2=None,
+            trainer_move_types=["Fire", "Fighting", "Rock", "Steel"],
+        )
+        assert 0 <= score_weak <= 100
+
+        # Test with many immunities/resistances
+        score_strong, _, _, _ = calculate_defense_score(
+            type1="Steel",
+            type2="Flying",
+            trainer_move_types=["Normal", "Poison", "Ground"],
+        )
+        assert 0 <= score_strong <= 100
+
+    def test_empty_move_types_returns_zero(self) -> None:
+        """Empty trainer move types returns zero score."""
+        score, immunities, resistances, weaknesses = calculate_defense_score(
+            type1="Normal",
+            type2=None,
+            trainer_move_types=[],
+        )
+        assert score == 0.0
+        assert immunities == []
+        assert resistances == []
+        assert weaknesses == []
+
+    def test_dual_type_immunity(self) -> None:
+        """Dual type immunity is correctly detected."""
+        # Ghost/Dark is immune to Normal and Fighting, immune to Psychic
+        _score, immunities, _resistances, _weaknesses = calculate_defense_score(
+            type1="Ghost",
+            type2="Dark",
+            trainer_move_types=["Normal", "Fighting", "Psychic"],
+        )
+        assert "Normal" in immunities
+        assert "Fighting" in immunities
+        assert "Psychic" in immunities
+        assert len(immunities) == 3
+
+    def test_multiple_weaknesses_lowers_score(self) -> None:
+        """Multiple weaknesses significantly lower the score."""
+        # Rock/Ice has many weaknesses
+        score, _, _, weaknesses = calculate_defense_score(
+            type1="Rock",
+            type2="Ice",
+            trainer_move_types=["Fighting", "Steel", "Water", "Ground"],
+        )
+        assert len(weaknesses) >= 3
+        assert score < 40  # Should be well below neutral
+
+
+class TestOffenseScoring:
+    """Tests for calculate_offense_score function."""
+
+    def test_stab_moves_rank_higher(self) -> None:
+        """STAB moves should contribute more to the score."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test", "test"],
+                "move_key": ["earthquake", "ice_beam"],
+                "move_name": ["Earthquake", "Ice Beam"],
+                "move_type": ["Ground", "Ice"],
+                "category": ["Physical", "Special"],
+                "power": [100, 90],
+                "learn_method": ["level", "tm"],
+                "level": [36, 0],
+            }
+        )
+        recommended_types = [
+            {"type": "Ground", "score": 20, "rank": 1},
+            {"type": "Ice", "score": 15, "rank": 2},
+        ]
+
+        # Ground type Pokemon - Earthquake is STAB
+        _score, good_moves = calculate_offense_score(
+            learnable_moves=moves_df,
+            recommended_types=recommended_types,
+            pokemon_type1="Ground",
+            pokemon_type2=None,
+            move_category_pref=None,
+        )
+
+        # Earthquake should be first (STAB)
+        assert good_moves[0]["move_name"] == "Earthquake"
+        assert good_moves[0]["is_stab"] is True
+        assert good_moves[0]["effective_power"] == 150  # 100 * 1.5
+
+    def test_higher_power_scores_better(self) -> None:
+        """Higher power moves within same type rank score better."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test", "test"],
+                "move_key": ["earthquake", "mud_slap"],
+                "move_name": ["Earthquake", "Mud-Slap"],
+                "move_type": ["Ground", "Ground"],
+                "category": ["Physical", "Special"],
+                "power": [100, 20],
+                "learn_method": ["level", "level"],
+                "level": [36, 5],
+            }
+        )
+        recommended_types = [{"type": "Ground", "score": 20, "rank": 1}]
+
+        _score, good_moves = calculate_offense_score(
+            learnable_moves=moves_df,
+            recommended_types=recommended_types,
+            pokemon_type1="Normal",
+            pokemon_type2=None,
+            move_category_pref=None,
+        )
+
+        # Higher power move should have higher effective power
+        earthquake = next(m for m in good_moves if m["move_name"] == "Earthquake")
+        mud_slap = next(m for m in good_moves if m["move_name"] == "Mud-Slap")
+        assert earthquake["power"] > mud_slap["power"]
+
+    def test_recommended_type_rank_matters(self) -> None:
+        """Moves of higher-ranked recommended types contribute more."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test", "test"],
+                "move_key": ["earthquake", "ice_beam"],
+                "move_name": ["Earthquake", "Ice Beam"],
+                "move_type": ["Ground", "Ice"],
+                "category": ["Physical", "Special"],
+                "power": [100, 100],  # Same power
+                "learn_method": ["level", "tm"],
+                "level": [36, 0],
+            }
+        )
+        # Ground is rank 1, Ice is rank 4
+        recommended_types = [
+            {"type": "Ground", "score": 20, "rank": 1},
+            {"type": "Ice", "score": 5, "rank": 4},
+        ]
+
+        _score, good_moves = calculate_offense_score(
+            learnable_moves=moves_df,
+            recommended_types=recommended_types,
+            pokemon_type1="Normal",  # Neither is STAB
+            pokemon_type2=None,
+            move_category_pref=None,
+        )
+
+        # Ground move should come before Ice move due to better rank
+        ground_idx = next(i for i, m in enumerate(good_moves) if m["move_type"] == "Ground")
+        ice_idx = next(i for i, m in enumerate(good_moves) if m["move_type"] == "Ice")
+        assert ground_idx < ice_idx
+
+    def test_no_learnable_moves_returns_zero(self) -> None:
+        """Pokemon with no learnable moves returns zero score."""
+        empty_df = pl.DataFrame(
+            schema={
+                "pokemon_key": pl.String,
+                "move_key": pl.String,
+                "move_name": pl.String,
+                "move_type": pl.String,
+                "category": pl.String,
+                "power": pl.Int64,
+                "learn_method": pl.String,
+                "level": pl.Int64,
+            }
+        )
+        recommended_types = [{"type": "Ground", "score": 20, "rank": 1}]
+
+        score, good_moves = calculate_offense_score(
+            learnable_moves=empty_df,
+            recommended_types=recommended_types,
+            pokemon_type1="Normal",
+            pokemon_type2=None,
+            move_category_pref=None,
+        )
+
+        assert score == 0.0
+        assert good_moves == []
+
+    def test_no_recommended_types_returns_zero(self) -> None:
+        """No recommended types returns zero score."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test"],
+                "move_key": ["earthquake"],
+                "move_name": ["Earthquake"],
+                "move_type": ["Ground"],
+                "category": ["Physical"],
+                "power": [100],
+                "learn_method": ["level"],
+                "level": [36],
+            }
+        )
+
+        score, good_moves = calculate_offense_score(
+            learnable_moves=moves_df,
+            recommended_types=[],
+            pokemon_type1="Ground",
+            pokemon_type2=None,
+            move_category_pref=None,
+        )
+
+        assert score == 0.0
+        assert good_moves == []
+
+    def test_category_preference_bonus(self) -> None:
+        """Move category preference adds bonus points."""
+        # Use only a Physical move to test that category bonus is applied
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test"],
+                "move_key": ["earthquake"],
+                "move_name": ["Earthquake"],
+                "move_type": ["Ground"],
+                "category": ["Physical"],
+                "power": [100],
+                "learn_method": ["level"],
+                "level": [36],
+            }
+        )
+        recommended_types = [{"type": "Ground", "score": 20, "rank": 1}]
+
+        # With Physical preference - should get category bonus
+        score_phys, _ = calculate_offense_score(
+            learnable_moves=moves_df,
+            recommended_types=recommended_types,
+            pokemon_type1="Normal",
+            pokemon_type2=None,
+            move_category_pref="Use Physical moves",
+        )
+
+        # With Special preference - no category bonus for Physical move
+        score_spec, _ = calculate_offense_score(
+            learnable_moves=moves_df,
+            recommended_types=recommended_types,
+            pokemon_type1="Normal",
+            pokemon_type2=None,
+            move_category_pref="Use Special moves",
+        )
+
+        # Physical preference should score higher for Physical move
+        assert score_phys > score_spec
+
+
+class TestStatScoring:
+    """Tests for calculate_stat_score function."""
+
+    def test_physical_recommendation_favors_attack(self) -> None:
+        """Physical recommendation should favor high Attack stat."""
+        score = calculate_stat_score(
+            attack=150,
+            sp_attack=50,
+            phys_spec_recommendation="Use Physical moves",
+        )
+        # High attack should give high score
+        assert score > 70
+
+    def test_special_recommendation_favors_sp_attack(self) -> None:
+        """Special recommendation should favor high Sp.Attack stat."""
+        score = calculate_stat_score(
+            attack=50,
+            sp_attack=150,
+            phys_spec_recommendation="Use Special moves",
+        )
+        # High sp_attack should give high score
+        assert score > 70
+
+    def test_either_works_averages_stats(self) -> None:
+        """Either works recommendation should average both stats."""
+        score = calculate_stat_score(
+            attack=100,
+            sp_attack=100,
+            phys_spec_recommendation="Either works",
+        )
+        # Average of normalized stats
+        expected = (100 / 190 * 100 + 100 / 190 * 100) / 2
+        assert abs(score - expected) < 1
+
+    def test_physical_low_attack_scores_low(self) -> None:
+        """Low Attack with Physical recommendation scores low."""
+        score = calculate_stat_score(
+            attack=30,
+            sp_attack=150,
+            phys_spec_recommendation="Use Physical moves",
+        )
+        assert score < 20
+
+    def test_special_low_sp_attack_scores_low(self) -> None:
+        """Low Sp.Attack with Special recommendation scores low."""
+        score = calculate_stat_score(
+            attack=150,
+            sp_attack=30,
+            phys_spec_recommendation="Use Special moves",
+        )
+        assert score < 20
+
+    def test_max_stat_gives_high_score(self) -> None:
+        """Very high stat gives score near 100."""
+        score = calculate_stat_score(
+            attack=190,
+            sp_attack=50,
+            phys_spec_recommendation="Use Physical moves",
+        )
+        assert score >= 95
+
+    def test_unknown_recommendation_averages(self) -> None:
+        """Unknown recommendation defaults to averaging stats."""
+        score = calculate_stat_score(
+            attack=100,
+            sp_attack=100,
+            phys_spec_recommendation="Unknown recommendation",
+        )
+        expected = (100 / 190 * 100 + 100 / 190 * 100) / 2
+        assert abs(score - expected) < 1
+
+
+class TestGoodMovesSorting:
+    """Tests for good moves sorting logic in calculate_offense_score."""
+
+    def test_stab_moves_first(self) -> None:
+        """STAB moves should always come before non-STAB moves."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test", "test", "test"],
+                "move_key": ["ice_beam", "earthquake", "flamethrower"],
+                "move_name": ["Ice Beam", "Earthquake", "Flamethrower"],
+                "move_type": ["Ice", "Ground", "Fire"],
+                "category": ["Special", "Physical", "Special"],
+                "power": [90, 100, 90],
+                "learn_method": ["tm", "level", "tm"],
+                "level": [0, 36, 0],
+            }
+        )
+        recommended_types = [
+            {"type": "Ground", "score": 20, "rank": 1},
+            {"type": "Ice", "score": 15, "rank": 2},
+            {"type": "Fire", "score": 10, "rank": 3},
+        ]
+
+        # Fire type Pokemon - Flamethrower is STAB
+        _, good_moves = calculate_offense_score(
+            learnable_moves=moves_df,
+            recommended_types=recommended_types,
+            pokemon_type1="Fire",
+            pokemon_type2=None,
+            move_category_pref=None,
+        )
+
+        # Flamethrower (STAB) should be first despite lower rank
+        assert good_moves[0]["move_name"] == "Flamethrower"
+        assert good_moves[0]["is_stab"] is True
+
+    def test_higher_power_within_stab(self) -> None:
+        """Within STAB moves, higher effective power ranks better."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test", "test"],
+                "move_key": ["flamethrower", "ember"],
+                "move_name": ["Flamethrower", "Ember"],
+                "move_type": ["Fire", "Fire"],
+                "category": ["Special", "Special"],
+                "power": [90, 40],
+                "learn_method": ["tm", "level"],
+                "level": [0, 5],
+            }
+        )
+        recommended_types = [{"type": "Fire", "score": 20, "rank": 1}]
+
+        _, good_moves = calculate_offense_score(
+            learnable_moves=moves_df,
+            recommended_types=recommended_types,
+            pokemon_type1="Fire",
+            pokemon_type2=None,
+            move_category_pref=None,
+        )
+
+        # Both are STAB, Flamethrower should be first (higher power)
+        assert good_moves[0]["move_name"] == "Flamethrower"
+        assert good_moves[1]["move_name"] == "Ember"
+
+    def test_type_rank_ordering(self) -> None:
+        """Within non-STAB moves, type rank determines order."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test", "test"],
+                "move_key": ["earthquake", "ice_beam"],
+                "move_name": ["Earthquake", "Ice Beam"],
+                "move_type": ["Ground", "Ice"],
+                "category": ["Physical", "Special"],
+                "power": [100, 100],  # Same power
+                "learn_method": ["level", "tm"],
+                "level": [36, 0],
+            }
+        )
+        recommended_types = [
+            {"type": "Ground", "score": 20, "rank": 1},
+            {"type": "Ice", "score": 15, "rank": 2},
+        ]
+
+        # Normal type - neither is STAB
+        _, good_moves = calculate_offense_score(
+            learnable_moves=moves_df,
+            recommended_types=recommended_types,
+            pokemon_type1="Normal",
+            pokemon_type2=None,
+            move_category_pref=None,
+        )
+
+        # Ground (rank 1) should come before Ice (rank 2)
+        assert good_moves[0]["move_name"] == "Earthquake"
+        assert good_moves[1]["move_name"] == "Ice Beam"
+
+
+class TestEdgeCases:
+    """Edge case tests for Pokemon ranker functions."""
+
+    def test_pokemon_no_offensive_moves(self) -> None:
+        """Pokemon with no offensive moves in recommended types."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test"],
+                "move_key": ["tackle"],
+                "move_name": ["Tackle"],
+                "move_type": ["Normal"],
+                "category": ["Physical"],
+                "power": [40],
+                "learn_method": ["level"],
+                "level": [1],
+            }
+        )
+        # Recommended types don't include Normal
+        recommended_types = [{"type": "Ground", "score": 20, "rank": 1}]
+
+        score, good_moves = calculate_offense_score(
+            learnable_moves=moves_df,
+            recommended_types=recommended_types,
+            pokemon_type1="Normal",
+            pokemon_type2=None,
+            move_category_pref=None,
+        )
+
+        assert score == 0.0
+        assert good_moves == []
+
+    def test_monotype_pokemon(self) -> None:
+        """Monotype Pokemon STAB calculation is correct."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test"],
+                "move_key": ["thunderbolt"],
+                "move_name": ["Thunderbolt"],
+                "move_type": ["Electric"],
+                "category": ["Special"],
+                "power": [90],
+                "learn_method": ["level"],
+                "level": [30],
+            }
+        )
+        recommended_types = [{"type": "Electric", "score": 20, "rank": 1}]
+
+        _, good_moves = calculate_offense_score(
+            learnable_moves=moves_df,
+            recommended_types=recommended_types,
+            pokemon_type1="Electric",
+            pokemon_type2=None,  # Monotype
+            move_category_pref=None,
+        )
+
+        assert good_moves[0]["is_stab"] is True
+        assert good_moves[0]["effective_power"] == 135  # 90 * 1.5
+
+    def test_dual_type_pokemon_both_stab(self) -> None:
+        """Dual type Pokemon gets STAB for both types."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test", "test"],
+                "move_key": ["earthquake", "dragon_claw"],
+                "move_name": ["Earthquake", "Dragon Claw"],
+                "move_type": ["Ground", "Dragon"],
+                "category": ["Physical", "Physical"],
+                "power": [100, 80],
+                "learn_method": ["level", "level"],
+                "level": [36, 24],
+            }
+        )
+        recommended_types = [
+            {"type": "Ground", "score": 20, "rank": 1},
+            {"type": "Dragon", "score": 15, "rank": 2},
+        ]
+
+        # Ground/Dragon type Pokemon
+        _, good_moves = calculate_offense_score(
+            learnable_moves=moves_df,
+            recommended_types=recommended_types,
+            pokemon_type1="Ground",
+            pokemon_type2="Dragon",
+            move_category_pref=None,
+        )
+
+        # Both moves should be STAB
+        assert all(m["is_stab"] for m in good_moves)
+
+    def test_defense_score_4x_weakness(self) -> None:
+        """4x weakness is counted as a single weakness (not double)."""
+        # Rock/Ice is 4x weak to Fighting
+        _score, _immunities, _resistances, weaknesses = calculate_defense_score(
+            type1="Rock",
+            type2="Ice",
+            trainer_move_types=["Fighting"],
+        )
+        # Fighting should appear once in weaknesses
+        assert weaknesses.count("Fighting") == 1
+
+    def test_duplicate_moves_not_counted_twice(self) -> None:
+        """Same move from different learn methods counted only once."""
+        moves_df = pl.DataFrame(
+            {
+                "pokemon_key": ["test", "test"],
+                "move_key": ["earthquake", "earthquake"],  # Same move
+                "move_name": ["Earthquake", "Earthquake"],
+                "move_type": ["Ground", "Ground"],
+                "category": ["Physical", "Physical"],
+                "power": [100, 100],
+                "learn_method": ["level", "tm"],
+                "level": [36, 0],
+            }
+        )
+        recommended_types = [{"type": "Ground", "score": 20, "rank": 1}]
+
+        _score, good_moves = calculate_offense_score(
+            learnable_moves=moves_df,
+            recommended_types=recommended_types,
+            pokemon_type1="Ground",
+            pokemon_type2=None,
+            move_category_pref=None,
+        )
+
+        # Should only count Earthquake once
+        assert len(good_moves) == 1
+        assert good_moves[0]["move_name"] == "Earthquake"
+
+
+class TestScoreCapping:
+    """Tests for score capping behavior."""
+
+    def test_offense_score_capped_at_100(self) -> None:
+        """Offense score cannot exceed 100."""
+        # Create many high-powered STAB moves
+        moves_data = {
+            "pokemon_key": ["test"] * 10,
+            "move_key": [f"move_{i}" for i in range(10)],
+            "move_name": [f"Move {i}" for i in range(10)],
+            "move_type": ["Ground"] * 10,
+            "category": ["Physical"] * 10,
+            "power": [100] * 10,
+            "learn_method": ["level"] * 10,
+            "level": list(range(10, 110, 10)),
+        }
+        moves_df = pl.DataFrame(moves_data)
+        recommended_types = [{"type": "Ground", "score": 50, "rank": 1}]
+
+        score, _ = calculate_offense_score(
+            learnable_moves=moves_df,
+            recommended_types=recommended_types,
+            pokemon_type1="Ground",
+            pokemon_type2=None,
+            move_category_pref=None,
+        )
+
+        assert score <= 100.0
+
+    def test_defense_score_clamped_to_range(self) -> None:
+        """Defense score is always between 0 and 100."""
+        # Test with many immunities
+        score_high, _, _, _ = calculate_defense_score(
+            type1="Ghost",
+            type2="Dark",
+            trainer_move_types=["Normal", "Fighting", "Psychic", "Poison"],
+        )
+        assert 0 <= score_high <= 100
+
+        # Test with many weaknesses
+        score_low, _, _, _ = calculate_defense_score(
+            type1="Ice",
+            type2=None,
+            trainer_move_types=["Fire", "Fighting", "Rock", "Steel"],
+        )
+        assert 0 <= score_low <= 100
