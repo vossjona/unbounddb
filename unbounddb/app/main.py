@@ -1,17 +1,18 @@
 """ABOUTME: Streamlit application for Pokemon Unbound queries.
-ABOUTME: Provides UI for searching Pokemon by type and move."""
+ABOUTME: Provides UI for browsing tables, trainer matchups, and Pokemon locations."""
 
 import streamlit as st
 
+from unbounddb.app.location_filters import LocationFilterConfig, apply_location_filters
 from unbounddb.app.queries import (
-    get_available_moves,
-    get_available_types,
+    get_all_location_names,
+    get_all_pokemon_names_from_locations,
     get_difficulties,
     get_table_list,
     get_table_preview,
     get_trainer_by_id,
     get_trainers_by_difficulty,
-    search_pokemon_by_type_and_move,
+    search_pokemon_locations,
 )
 from unbounddb.app.tools.defensive_suggester import (
     analyze_trainer_defense,
@@ -52,118 +53,17 @@ if not settings.db_path.exists():
 
 # Load available options
 try:
-    types = get_available_types()
-    moves = get_available_moves()
     tables = get_table_list()
     difficulties = get_difficulties()
 except Exception as e:
     st.error(f"Error loading database: {e}")
     st.stop()
 
-# Main content area - tabs
-tab1, tab2, tab3 = st.tabs(["Search Results", "Browse Tables", "Type Suggester"])
+# Main content area - 3 tabs with inline controls
+tab1, tab2, tab3 = st.tabs(["Browse", "Trainer Matchups", "Pokemon Locations"])
 
-# Sidebar content changes based on selected tab
-# We use session state to track which tab's sidebar to show
-if "active_tab" not in st.session_state:
-    st.session_state.active_tab = "search"
-
+# Tab 1: Browse Tables
 with tab1:
-    st.session_state.active_tab = "search"
-
-with tab2:
-    st.session_state.active_tab = "browse"
-
-with tab3:
-    st.session_state.active_tab = "defensive"
-
-
-# Sidebar for search filters (Tab 1)
-if st.session_state.active_tab == "search":
-    st.sidebar.header("Search Filters")
-
-    # Type selector
-    selected_type = st.sidebar.selectbox(
-        "Pokemon Type",
-        options=["Any", *types],
-        index=0,
-        key="search_type",
-    )
-
-    # Move selector with search
-    selected_move = st.sidebar.selectbox(
-        "Learns Move",
-        options=["Any", *moves],
-        index=0,
-        key="search_move",
-    )
-
-    # Search button
-    search_clicked = st.sidebar.button("Search", type="primary", key="search_btn")
-
-# Sidebar for defensive suggester (Tab 3)
-elif st.session_state.active_tab == "defensive":
-    st.sidebar.header("Trainer Selection")
-
-    # Difficulty dropdown
-    selected_difficulty = st.sidebar.selectbox(
-        "Difficulty",
-        options=["Any", *difficulties],
-        index=0,
-        key="def_difficulty",
-    )
-
-    # Get trainers filtered by difficulty
-    difficulty_filter = None if selected_difficulty == "Any" else selected_difficulty
-    trainers = get_trainers_by_difficulty(difficulty_filter)
-
-    # Trainer dropdown
-    trainer_options = {f"{name} (ID: {tid})": tid for tid, name in trainers}
-    selected_trainer_str = st.sidebar.selectbox(
-        "Trainer",
-        options=list(trainer_options.keys()) if trainer_options else ["No trainers found"],
-        index=0,
-        key="def_trainer",
-    )
-
-    # Analyze button
-    analyze_clicked = st.sidebar.button("Analyze Types", type="primary", key="analyze_btn")
-
-# Tab 1: Search Results
-with tab1:
-    # Get sidebar values with defaults
-    selected_type = st.session_state.get("search_type", "Any")
-    selected_move = st.session_state.get("search_move", "Any")
-    search_clicked = st.session_state.get("search_btn", False)
-
-    if search_clicked or (selected_type != "Any" or selected_move != "Any"):
-        type_filter = selected_type if selected_type != "Any" else None
-        move_filter = selected_move if selected_move != "Any" else None
-
-        if type_filter is None and move_filter is None:
-            st.info("Select a type or move to search, or click Search to view all Pokemon.")
-            results = search_pokemon_by_type_and_move()
-        else:
-            results = search_pokemon_by_type_and_move(
-                pokemon_type=type_filter,
-                move_name=move_filter,
-            )
-
-        st.subheader(f"Results ({len(results)} Pokemon)")
-
-        if len(results) == 0:
-            st.warning("No Pokemon found matching the criteria.")
-        else:
-            st.dataframe(
-                results.to_pandas(),
-                width="stretch",
-                hide_index=True,
-            )
-    else:
-        st.info("Use the sidebar to filter Pokemon by type and/or move, then click Search.")
-
-# Tab 2: Browse Tables
-with tab2:
     if tables:
         col1, col2 = st.columns([3, 1])
         with col1:
@@ -184,17 +84,37 @@ with tab2:
     else:
         st.warning("No tables found in database.")
 
-# Tab 3: Type Suggester (Defensive + Offensive)
-with tab3:
-    # Get sidebar values
-    selected_difficulty = st.session_state.get("def_difficulty", "Any")
-    selected_trainer_str = st.session_state.get("def_trainer", "")
-    analyze_clicked = st.session_state.get("analyze_btn", False)
+# Tab 2: Trainer Matchups (Defensive + Offensive)
+with tab2:
+    # Trainer selection at top of tab
+    trainer_col1, trainer_col2, trainer_col3 = st.columns([2, 3, 1])
 
-    # Parse trainer ID from selection
+    with trainer_col1:
+        selected_difficulty = st.selectbox(
+            "Difficulty",
+            options=["Any", *difficulties],
+            index=0,
+            key="def_difficulty",
+        )
+
+    # Get trainers filtered by difficulty
     difficulty_filter = None if selected_difficulty == "Any" else selected_difficulty
     trainers = get_trainers_by_difficulty(difficulty_filter)
     trainer_options = {f"{name} (ID: {tid})": tid for tid, name in trainers}
+
+    with trainer_col2:
+        selected_trainer_str = st.selectbox(
+            "Trainer",
+            options=list(trainer_options.keys()) if trainer_options else ["No trainers found"],
+            index=0,
+            key="def_trainer",
+        )
+
+    with trainer_col3:
+        st.write("")  # Spacer to align button with selectboxes
+        analyze_clicked = st.button("Analyze", type="primary", key="analyze_btn")
+
+    st.divider()
 
     # Store analyzed trainer in session state so it persists across checkbox reruns
     if analyze_clicked and selected_trainer_str in trainer_options:
@@ -696,6 +616,105 @@ with tab3:
             st.error("Could not load trainer information.")
     else:
         st.info(
-            "Select a difficulty and trainer from the sidebar, then click 'Analyze Types' "
+            "Select a difficulty and trainer above, then click 'Analyze' "
             "to find the best defensive and offensive type combinations against that trainer's team."
         )
+
+# Tab 3: Pokemon Locations
+with tab3:
+    # Get available Pokemon and locations for filters
+    location_pokemon = get_all_pokemon_names_from_locations()
+    all_locations = get_all_location_names()
+
+    # Horizontal filter bar - Row 1: Pokemon selectbox, Surf, Dive, Rock Smash
+    filter_row1_col1, filter_row1_col2, filter_row1_col3, filter_row1_col4 = st.columns([3, 1, 1, 1])
+
+    with filter_row1_col1:
+        selected_pokemon = st.selectbox(
+            "Pokemon",
+            options=["Select a Pokemon...", *location_pokemon],
+            index=0,
+            key="loc_pokemon_search",
+        )
+
+    with filter_row1_col2:
+        has_surf = st.checkbox("Surf", value=True, key="loc_has_surf")
+
+    with filter_row1_col3:
+        has_dive = st.checkbox("Dive", value=True, key="loc_has_dive")
+
+    with filter_row1_col4:
+        has_rock_smash = st.checkbox("Rock Smash", value=True, key="loc_has_rock_smash")
+
+    # Horizontal filter bar - Row 2: Rod Level, Post Game, Accessible Locations
+    filter_row2_col1, filter_row2_col2, filter_row2_col3 = st.columns([2, 1, 3])
+
+    with filter_row2_col1:
+        rod_level = st.selectbox(
+            "Rod Level",
+            options=["Super Rod", "Good Rod", "Old Rod", "None"],
+            index=0,
+            key="loc_rod_level",
+        )
+
+    with filter_row2_col2:
+        post_game = st.checkbox("Post Game", value=True, key="loc_post_game")
+
+    with filter_row2_col3:
+        accessible_locations = st.multiselect(
+            "Accessible Locations",
+            options=all_locations,
+            default=[],
+            key="loc_accessible",
+            help="Leave empty to show all locations",
+        )
+
+    st.divider()
+
+    # Results section
+    if selected_pokemon == "Select a Pokemon...":
+        st.info("Select a Pokemon above to see where it can be caught.")
+    else:
+        st.header(f"Catch Locations for {selected_pokemon}")
+
+        # Query locations for selected Pokemon
+        locations_df = search_pokemon_locations(selected_pokemon)
+
+        if locations_df.is_empty():
+            st.warning(f"No catch locations found for {selected_pokemon}.")
+        else:
+            # Apply filters
+            filter_config = LocationFilterConfig(
+                has_surf=has_surf,
+                has_dive=has_dive,
+                rod_level=rod_level,
+                has_rock_smash=has_rock_smash,
+                post_game=post_game,
+                accessible_locations=accessible_locations if accessible_locations else None,
+            )
+            filtered_df = apply_location_filters(locations_df, filter_config)
+
+            if filtered_df.is_empty():
+                st.warning("No locations match the current filters. Try adjusting your game progress settings above.")
+            else:
+                st.subheader(f"Found in {len(filtered_df)} location(s)")
+
+                # Display results table
+                table_data = []
+                for row in filtered_df.iter_rows(named=True):
+                    notes = row["encounter_notes"] if row["encounter_notes"] else "-"
+                    req = row["requirement"] if row["requirement"] else "-"
+                    table_data.append(
+                        {
+                            "Location": row["location_name"],
+                            "Method": row["encounter_method"],
+                            "Notes": notes,
+                            "Requirement": req,
+                        }
+                    )
+
+                st.dataframe(
+                    table_data,
+                    width="stretch",
+                    hide_index=True,
+                )

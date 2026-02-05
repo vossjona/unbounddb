@@ -325,3 +325,76 @@ def get_trainer_team_with_moves(trainer_id: int, db_path: Path | None = None) ->
     except Exception as e:
         conn.close()
         raise e
+
+
+def get_all_location_names(db_path: Path | None = None) -> list[str]:
+    """Get sorted list of unique location names from the locations table.
+
+    Args:
+        db_path: Optional path to database.
+
+    Returns:
+        Sorted list of unique location names.
+    """
+    conn = _get_conn(db_path)
+
+    try:
+        result = conn.execute(
+            "SELECT DISTINCT location_name FROM locations WHERE location_name IS NOT NULL ORDER BY location_name"
+        ).fetchall()
+        conn.close()
+        return [r[0] for r in result if r[0]]
+    except Exception:
+        conn.close()
+        return []
+
+
+def get_all_pokemon_names_from_locations(db_path: Path | None = None) -> list[str]:
+    """Get sorted list of unique Pokemon names from the locations table.
+
+    Args:
+        db_path: Optional path to database.
+
+    Returns:
+        Sorted list of unique Pokemon names.
+    """
+    conn = _get_conn(db_path)
+
+    try:
+        result = conn.execute(
+            "SELECT DISTINCT pokemon FROM locations WHERE pokemon IS NOT NULL ORDER BY pokemon"
+        ).fetchall()
+        conn.close()
+        return [r[0] for r in result if r[0]]
+    except Exception:
+        conn.close()
+        return []
+
+
+def search_pokemon_locations(pokemon_name: str, db_path: Path | None = None) -> pl.DataFrame:
+    """Search for all locations where a Pokemon can be caught.
+
+    Args:
+        pokemon_name: The Pokemon name to search for (case-insensitive).
+        db_path: Optional path to database.
+
+    Returns:
+        DataFrame with columns: location_name, encounter_method, encounter_notes, requirement.
+    """
+    conn = _get_conn(db_path)
+
+    try:
+        result = conn.execute(
+            """
+            SELECT location_name, encounter_method, encounter_notes, requirement
+            FROM locations
+            WHERE LOWER(pokemon) = LOWER(?)
+            ORDER BY location_name, encounter_method
+            """,
+            [pokemon_name],
+        ).pl()
+        conn.close()
+        return result
+    except Exception as e:
+        conn.close()
+        raise e
