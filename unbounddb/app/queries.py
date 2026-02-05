@@ -610,3 +610,169 @@ def search_pokemon_locations(pokemon_name: str, db_path: Path | None = None) -> 
     except Exception as e:
         conn.close()
         raise e
+
+
+def get_move_details(move_key: str, db_path: Path | None = None) -> dict[str, str | int | None] | None:
+    """Get full details for a move.
+
+    Args:
+        move_key: The slugified move key to look up.
+        db_path: Optional path to database.
+
+    Returns:
+        Dictionary with move details or None if not found.
+        Keys: name, type, category, power, accuracy, pp, priority, effect
+    """
+    conn = _get_conn(db_path)
+
+    try:
+        result = conn.execute(
+            """
+            SELECT name, type, category, power, accuracy, pp, priority, effect
+            FROM moves
+            WHERE move_key = ?
+            """,
+            [move_key],
+        ).fetchone()
+        conn.close()
+
+        if result:
+            return {
+                "name": result[0],
+                "type": result[1],
+                "category": result[2],
+                "power": result[3],
+                "accuracy": result[4],
+                "pp": result[5],
+                "priority": result[6],
+                "effect": result[7],
+            }
+        return None
+    except Exception:
+        conn.close()
+        return None
+
+
+def get_pokemon_details(pokemon_key: str, db_path: Path | None = None) -> dict[str, str | int | None] | None:
+    """Get full stats for a Pokemon.
+
+    Args:
+        pokemon_key: The slugified pokemon key to look up.
+        db_path: Optional path to database.
+
+    Returns:
+        Dictionary with Pokemon details or None if not found.
+        Keys: name, hp, attack, defense, sp_attack, sp_defense, speed, bst,
+              type1, type2, ability1, ability2, hidden_ability
+    """
+    conn = _get_conn(db_path)
+
+    try:
+        result = conn.execute(
+            """
+            SELECT name, hp, attack, defense, sp_attack, sp_defense, speed, bst,
+                   type1, type2, ability1, ability2, hidden_ability
+            FROM pokemon
+            WHERE pokemon_key = ?
+            """,
+            [pokemon_key],
+        ).fetchone()
+        conn.close()
+
+        if result:
+            return {
+                "name": result[0],
+                "hp": result[1],
+                "attack": result[2],
+                "defense": result[3],
+                "sp_attack": result[4],
+                "sp_defense": result[5],
+                "speed": result[6],
+                "bst": result[7],
+                "type1": result[8],
+                "type2": result[9],
+                "ability1": result[10],
+                "ability2": result[11],
+                "hidden_ability": result[12],
+            }
+        return None
+    except Exception:
+        conn.close()
+        return None
+
+
+def get_pokemon_by_type(
+    type_name: str,
+    available_pokemon: set[str] | None = None,
+    db_path: Path | None = None,
+) -> pl.DataFrame:
+    """Get all Pokemon of a given type.
+
+    Args:
+        type_name: The type to search for (e.g., "Fire", "Water").
+        available_pokemon: Optional set of Pokemon names to filter by.
+        db_path: Optional path to database.
+
+    Returns:
+        DataFrame with columns: name, type1, type2, bst, pokemon_key
+        Sorted by bst descending.
+    """
+    conn = _get_conn(db_path)
+
+    try:
+        result = conn.execute(
+            """
+            SELECT name, type1, type2, bst, pokemon_key
+            FROM pokemon
+            WHERE type1 = ? OR type2 = ?
+            ORDER BY bst DESC
+            """,
+            [type_name, type_name],
+        ).pl()
+        conn.close()
+
+        # Filter by available Pokemon if provided
+        if available_pokemon is not None and not result.is_empty():
+            result = result.filter(pl.col("name").is_in(list(available_pokemon)))
+
+        return result
+    except Exception as e:
+        conn.close()
+        raise e
+
+
+def get_pokemon_learnset(pokemon_key: str, db_path: Path | None = None) -> pl.DataFrame:
+    """Get complete learnset for a Pokemon.
+
+    Args:
+        pokemon_key: The slugified pokemon key to look up.
+        db_path: Optional path to database.
+
+    Returns:
+        DataFrame with columns: move_name, move_type, category, power, learn_method, level
+        Sorted by learn_method and level.
+    """
+    conn = _get_conn(db_path)
+
+    try:
+        result = conn.execute(
+            """
+            SELECT
+                m.name AS move_name,
+                m.type AS move_type,
+                m.category,
+                m.power,
+                pm.learn_method,
+                pm.level
+            FROM pokemon_moves pm
+            JOIN moves m ON pm.move_key = m.move_key
+            WHERE pm.pokemon_key = ?
+            ORDER BY pm.learn_method, pm.level, m.name
+            """,
+            [pokemon_key],
+        ).pl()
+        conn.close()
+        return result
+    except Exception as e:
+        conn.close()
+        raise e

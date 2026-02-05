@@ -260,6 +260,7 @@ def calculate_offense_score(
         good_moves.append(
             {
                 "move_name": row["move_name"],
+                "move_key": move_key,
                 "move_type": move_type,
                 "power": power,
                 "category": category,

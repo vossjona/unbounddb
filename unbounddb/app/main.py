@@ -3,6 +3,13 @@ ABOUTME: Provides UI for browsing tables, trainer matchups, and Pokemon location
 
 import streamlit as st
 
+from unbounddb.app.components import (
+    render_pokemon_with_popup,
+)
+from unbounddb.app.dialogs import (
+    show_learnset_dialog,
+    show_locations_dialog,
+)
 from unbounddb.app.game_progress_persistence import load_game_progress, save_game_progress
 from unbounddb.app.location_filters import LocationFilterConfig, apply_location_filters
 from unbounddb.app.queries import (
@@ -10,6 +17,7 @@ from unbounddb.app.queries import (
     get_all_pokemon_names_from_locations,
     get_available_pokemon_set,
     get_difficulties,
+    get_move_details,
     get_table_list,
     get_table_preview,
     get_trainer_by_id,
@@ -632,6 +640,25 @@ with tab2:
                             with st.expander(
                                 f"#{row['rank']} {row['name']} ({type_combo}) - Score: {row['total_score']}"
                             ):
+                                # Quick action buttons
+                                btn_col1, btn_col2, btn_col3 = st.columns([0.3, 0.35, 0.35])
+                                with btn_col1:
+                                    render_pokemon_with_popup(row["name"], row["pokemon_key"])
+                                with btn_col2:
+                                    if st.button(
+                                        ":material/location_on: Locations",
+                                        key=f"loc_btn_{row['pokemon_key']}",
+                                    ):
+                                        show_locations_dialog(row["name"], global_filter_config)
+                                with btn_col3:
+                                    if st.button(
+                                        ":material/list: Full Moveset",
+                                        key=f"moveset_btn_{row['pokemon_key']}",
+                                    ):
+                                        show_learnset_dialog(row["pokemon_key"], row["name"])
+
+                                st.divider()
+
                                 # Score breakdown
                                 col1, col2, col3, col4 = st.columns(4)
                                 with col1:
@@ -677,18 +704,32 @@ with tab2:
                                 good_moves = get_pokemon_moves_detail(row["pokemon_key"], trainer_id)
                                 if good_moves:
                                     st.markdown("**Recommended Moves:**")
+
+                                    # Display moves table with full details
                                     moves_table = []
                                     for move in good_moves[:8]:  # Show top 8 moves
                                         stab_str = "Yes" if move["is_stab"] else "No"
                                         learn_str = move["learn_method"]
                                         if move["level"] and move["level"] > 0:
                                             learn_str = f"{move['learn_method']} ({move['level']})"
+
+                                        # Get additional move details (accuracy, PP)
+                                        move_details = get_move_details(move["move_key"])
+                                        acc_str = (
+                                            f"{move_details['accuracy']}%"
+                                            if move_details and move_details["accuracy"]
+                                            else "-"
+                                        )
+                                        pp_str = str(move_details["pp"]) if move_details and move_details["pp"] else "-"
+
                                         moves_table.append(
                                             {
                                                 "Move": move["move_name"],
                                                 "Type": move["move_type"],
-                                                "Power": move["power"],
-                                                "Category": move["category"],
+                                                "Cat": move["category"],
+                                                "Pow": move["power"] or "-",
+                                                "Acc": acc_str,
+                                                "PP": pp_str,
                                                 "STAB": stab_str,
                                                 "Learn": learn_str,
                                             }
@@ -729,6 +770,9 @@ with tab3:
     else:
         st.header(f"Catch Locations for {selected_pokemon}")
 
+        # Pokemon info popup for the searched Pokemon
+        render_pokemon_with_popup(f":material/info: View {selected_pokemon} Stats", selected_pokemon)
+
         # Query locations for selected Pokemon
         locations_df = search_pokemon_locations(selected_pokemon)
 
@@ -746,6 +790,17 @@ with tab3:
             else:
                 st.subheader(f"Found in {len(filtered_df)} location(s)")
 
+                # Show info popups for unique catchable Pokemon (pre-evolutions)
+                unique_pokemon = filtered_df["pokemon"].unique().to_list()
+                if len(unique_pokemon) > 1:
+                    st.caption("Click to view stats for catchable forms:")
+                    pokemon_cols = st.columns(min(len(unique_pokemon), 4))
+                    for i, pkmn in enumerate(unique_pokemon):
+                        with pokemon_cols[i % 4]:
+                            render_pokemon_with_popup(pkmn)
+
+                st.divider()
+
                 # Display results table
                 table_data = []
                 for row in filtered_df.iter_rows(named=True):
@@ -761,8 +816,4 @@ with tab3:
                         }
                     )
 
-                st.dataframe(
-                    table_data,
-                    width="stretch",
-                    hide_index=True,
-                )
+                st.dataframe(table_data, width="stretch", hide_index=True)
