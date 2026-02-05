@@ -329,6 +329,7 @@ class TestLocationFilterConfigDefaults:
         assert config.has_rock_smash is True
         assert config.post_game is True
         assert config.accessible_locations is None
+        assert config.level_cap is None
 
 
 class TestGetPreEvolutions:
@@ -719,3 +720,159 @@ class TestGetAvailablePokemonSet:
         result = get_available_pokemon_set(config, test_db)
 
         assert result == set()
+
+
+class TestGetAllEvolutionsWithLevelCap:
+    """Tests for get_all_evolutions with level_cap parameter."""
+
+    @pytest.fixture
+    def test_db(self, tmp_path: Path) -> Path:
+        """Create a test database with evolution data including levels."""
+        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(str(db_path))
+
+        conn.execute("""
+            CREATE TABLE evolutions (
+                from_pokemon VARCHAR,
+                to_pokemon VARCHAR,
+                method VARCHAR,
+                condition VARCHAR,
+                from_pokemon_key VARCHAR,
+                to_pokemon_key VARCHAR
+            )
+        """)
+
+        # Insert evolution chains with level data
+        # Charmander -16-> Charmeleon -36-> Charizard (Level evolutions)
+        # Pichu -Friendship-> Pikachu -Thunder Stone-> Raichu (Non-level evolutions)
+        # Bulbasaur -16-> Ivysaur -32-> Venusaur
+        conn.execute("""
+            INSERT INTO evolutions VALUES
+            ('Charmander', 'Charmeleon', 'Level', '16', 'charmander', 'charmeleon'),
+            ('Charmeleon', 'Charizard', 'Level', '36', 'charmeleon', 'charizard'),
+            ('Pichu', 'Pikachu', 'Friendship', '', 'pichu', 'pikachu'),
+            ('Pikachu', 'Raichu', 'Stone', 'Thunder Stone', 'pikachu', 'raichu'),
+            ('Bulbasaur', 'Ivysaur', 'Level', '16', 'bulbasaur', 'ivysaur'),
+            ('Ivysaur', 'Venusaur', 'Level', '32', 'ivysaur', 'venusaur')
+        """)
+
+        conn.close()
+        return db_path
+
+    def test_no_level_cap_returns_all_evolutions(self, test_db: Path) -> None:
+        """Without level cap, should return all evolutions."""
+        result = get_all_evolutions("Charmander", test_db, level_cap=None)
+        assert len(result) == 2
+        assert "Charmeleon" in result
+        assert "Charizard" in result
+
+    def test_level_cap_excludes_high_level_evolutions(self, test_db: Path) -> None:
+        """Level cap should exclude evolutions requiring higher levels."""
+        # Level cap 20 should include Charmeleon (16) but exclude Charizard (36)
+        result = get_all_evolutions("Charmander", test_db, level_cap=20)
+        assert "Charmeleon" in result
+        assert "Charizard" not in result
+
+    def test_level_cap_includes_at_exact_level(self, test_db: Path) -> None:
+        """Evolution should be included if level cap equals evolution level."""
+        result = get_all_evolutions("Charmander", test_db, level_cap=16)
+        assert "Charmeleon" in result
+
+    def test_level_cap_excludes_at_one_below(self, test_db: Path) -> None:
+        """Evolution should be excluded if level cap is below evolution level."""
+        result = get_all_evolutions("Charmander", test_db, level_cap=15)
+        assert "Charmeleon" not in result
+
+    def test_non_level_evolutions_always_included(self, test_db: Path) -> None:
+        """Non-level evolutions (Stone, Friendship) should always be included."""
+        # Pichu evolves to Pikachu via Friendship, Pikachu evolves to Raichu via Stone
+        result = get_all_evolutions("Pichu", test_db, level_cap=1)
+        assert "Pikachu" in result
+        assert "Raichu" in result
+
+    def test_level_cap_chain_stops_at_high_level(self, test_db: Path) -> None:
+        """If middle evolution is blocked, further evolutions should also be blocked."""
+        # Bulbasaur -16-> Ivysaur -32-> Venusaur
+        # Level cap 20 blocks Venusaur (needs 32)
+        result = get_all_evolutions("Bulbasaur", test_db, level_cap=20)
+        assert "Ivysaur" in result
+        assert "Venusaur" not in result
+
+
+class TestGetAvailablePokemonSetWithLevelCap:
+    """Tests for get_available_pokemon_set with level_cap filter."""
+
+    @pytest.fixture
+    def test_db(self, tmp_path: Path) -> Path:
+        """Create a test database with evolution and location data."""
+        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(str(db_path))
+
+        conn.execute("""
+            CREATE TABLE evolutions (
+                from_pokemon VARCHAR,
+                to_pokemon VARCHAR,
+                method VARCHAR,
+                condition VARCHAR,
+                from_pokemon_key VARCHAR,
+                to_pokemon_key VARCHAR
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE locations (
+                pokemon VARCHAR,
+                pokemon_key VARCHAR,
+                location_name VARCHAR,
+                encounter_method VARCHAR,
+                encounter_notes VARCHAR,
+                requirement VARCHAR
+            )
+        """)
+
+        # Charmander -16-> Charmeleon -36-> Charizard
+        # Eevee -Stone-> Vaporeon (non-level)
+        conn.execute("""
+            INSERT INTO evolutions VALUES
+            ('Charmander', 'Charmeleon', 'Level', '16', 'charmander', 'charmeleon'),
+            ('Charmeleon', 'Charizard', 'Level', '36', 'charmeleon', 'charizard'),
+            ('Eevee', 'Vaporeon', 'Stone', 'Water Stone', 'eevee', 'vaporeon')
+        """)
+
+        conn.execute("""
+            INSERT INTO locations VALUES
+            ('Charmander', 'charmander', 'Mt. Ember', 'grass', '', ''),
+            ('Eevee', 'eevee', 'Route 1', 'grass', '', '')
+        """)
+
+        conn.close()
+        return db_path
+
+    def test_level_cap_filters_high_level_evolutions(self, test_db: Path) -> None:
+        """Level cap should exclude Pokemon requiring evolution above that level."""
+        config = LocationFilterConfig(level_cap=20)
+        result = get_available_pokemon_set(config, test_db)
+
+        assert "Charmander" in result
+        assert "Charmeleon" in result  # Evolves at 16
+        assert "Charizard" not in result  # Evolves at 36
+
+    def test_level_cap_allows_non_level_evolutions(self, test_db: Path) -> None:
+        """Non-level evolutions should be included regardless of level cap."""
+        config = LocationFilterConfig(level_cap=1)
+        result = get_available_pokemon_set(config, test_db)
+
+        # Eevee evolves via Stone, not level
+        assert "Eevee" in result
+        assert "Vaporeon" in result
+
+    def test_no_level_cap_includes_all_evolutions(self, test_db: Path) -> None:
+        """Without level cap, all evolutions should be included."""
+        config = LocationFilterConfig(level_cap=None)
+        result = get_available_pokemon_set(config, test_db)
+
+        assert "Charmander" in result
+        assert "Charmeleon" in result
+        assert "Charizard" in result
+        assert "Eevee" in result
+        assert "Vaporeon" in result

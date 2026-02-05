@@ -372,40 +372,79 @@ def get_pre_evolutions(pokemon_name: str, db_path: Path | None = None) -> list[s
         return []
 
 
-def get_all_evolutions(pokemon_name: str, db_path: Path | None = None) -> list[str]:
+def get_all_evolutions(
+    pokemon_name: str,
+    db_path: Path | None = None,
+    level_cap: int | None = None,
+) -> list[str]:
     """Get all evolutions of a Pokemon using recursive CTE.
 
     Walks the evolution chain forward to find all Pokemon that the given
-    Pokemon eventually evolves into.
+    Pokemon eventually evolves into. If level_cap is provided, only includes
+    evolutions that can be achieved at or below that level.
 
     Args:
         pokemon_name: The Pokemon name to find evolutions for (case-insensitive).
         db_path: Optional path to database.
+        level_cap: If set, exclude evolutions requiring level > this value.
+            Non-level evolutions (Stone, Trade, etc.) are always included.
 
     Returns:
         List of evolution names.
-        For "Charmander" returns ["Charmeleon", "Charizard"].
+        For "Charmander" returns ["Charmeleon", "Charizard"] (or fewer with level_cap).
         For Pokemon with no evolutions returns [].
     """
     conn = _get_conn(db_path)
 
-    query = """
-    WITH RECURSIVE evos AS (
-        SELECT from_pokemon, to_pokemon
-        FROM evolutions
-        WHERE LOWER(from_pokemon) = LOWER(?)
+    if level_cap is None:
+        # No level cap - return all evolutions
+        query = """
+        WITH RECURSIVE evos AS (
+            SELECT from_pokemon, to_pokemon
+            FROM evolutions
+            WHERE LOWER(from_pokemon) = LOWER(?)
 
-        UNION ALL
+            UNION ALL
 
-        SELECT e.from_pokemon, e.to_pokemon
-        FROM evolutions e
-        JOIN evos ev ON LOWER(e.from_pokemon) = LOWER(ev.to_pokemon)
-    )
-    SELECT DISTINCT to_pokemon FROM evos
-    """
+            SELECT e.from_pokemon, e.to_pokemon
+            FROM evolutions e
+            JOIN evos ev ON LOWER(e.from_pokemon) = LOWER(ev.to_pokemon)
+        )
+        SELECT DISTINCT to_pokemon FROM evos
+        """
+        params: list[str | int] = [pokemon_name]
+    else:
+        # With level cap - only include evolutions achievable at or below level_cap
+        # Level-based evolutions (method = 'Level') must have condition <= level_cap
+        # Non-level evolutions (Stone, Trade, etc.) are always included
+        query = """
+        WITH RECURSIVE evos AS (
+            SELECT from_pokemon, to_pokemon, method, condition
+            FROM evolutions
+            WHERE LOWER(from_pokemon) = LOWER(?)
+            AND (
+                method != 'Level'
+                OR TRY_CAST(condition AS INTEGER) IS NULL
+                OR TRY_CAST(condition AS INTEGER) <= ?
+            )
+
+            UNION ALL
+
+            SELECT e.from_pokemon, e.to_pokemon, e.method, e.condition
+            FROM evolutions e
+            JOIN evos ev ON LOWER(e.from_pokemon) = LOWER(ev.to_pokemon)
+            WHERE (
+                e.method != 'Level'
+                OR TRY_CAST(e.condition AS INTEGER) IS NULL
+                OR TRY_CAST(e.condition AS INTEGER) <= ?
+            )
+        )
+        SELECT DISTINCT to_pokemon FROM evos
+        """
+        params = [pokemon_name, level_cap, level_cap]
 
     try:
-        result = conn.execute(query, [pokemon_name]).fetchall()
+        result = conn.execute(query, params).fetchall()
         conn.close()
         return [r[0] for r in result]
     except Exception:
@@ -456,11 +495,11 @@ def get_available_pokemon_set(
     # Get base catchable Pokemon
     catchable = set(filtered["pokemon"].unique().to_list())
 
-    # Add all evolutions of catchable Pokemon
+    # Add all evolutions of catchable Pokemon (respecting level cap)
     available: set[str] = set()
     for pokemon in catchable:
         available.add(pokemon)
-        evolutions = get_all_evolutions(pokemon, db_path)
+        evolutions = get_all_evolutions(pokemon, db_path, level_cap=filter_config.level_cap)
         available.update(evolutions)
 
     return available

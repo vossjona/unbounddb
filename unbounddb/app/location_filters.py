@@ -17,6 +17,7 @@ class LocationFilterConfig:
         has_rock_smash: If False, exclude encounter_method == "rock_smash".
         post_game: If False, exclude Post-game locations and Beat the League requirements.
         accessible_locations: If not empty, only keep those location_names.
+        level_cap: If set, exclude evolutions requiring level > this value.
     """
 
     has_surf: bool = True
@@ -25,6 +26,7 @@ class LocationFilterConfig:
     has_rock_smash: bool = True
     post_game: bool = True
     accessible_locations: list[str] | None = None
+    level_cap: int | None = None
 
 
 def apply_location_filters(df: pl.DataFrame, config: LocationFilterConfig) -> pl.DataFrame:

@@ -64,7 +64,7 @@ except Exception as e:
 # Global Game Progress Config (collapsible, before tabs)
 with st.expander("Game Progress", expanded=False):
     st.caption("Configure your current game progress to filter available Pokemon in the Ranker and Locations tabs.")
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         global_has_surf = st.checkbox("Surf", value=True, key="global_surf")
         global_has_dive = st.checkbox("Dive", value=True, key="global_dive")
@@ -79,6 +79,16 @@ with st.expander("Game Progress", expanded=False):
             key="global_rod",
         )
     with col4:
+        global_level_cap = st.number_input(
+            "Level Cap",
+            min_value=0,
+            max_value=100,
+            value=0,
+            step=5,
+            key="global_level_cap",
+            help="Set to 0 for no limit. Filters Pokemon that evolve above this level.",
+        )
+    with col5:
         global_accessible_locations = st.multiselect(
             "Accessible Locations",
             options=all_locations,
@@ -95,6 +105,7 @@ global_filter_config = LocationFilterConfig(
     has_rock_smash=global_has_rock_smash,
     post_game=global_post_game,
     accessible_locations=global_accessible_locations if global_accessible_locations else None,
+    level_cap=global_level_cap if global_level_cap > 0 else None,
 )
 
 # Main content area - 3 tabs with inline controls
