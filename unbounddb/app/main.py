@@ -7,6 +7,7 @@ from unbounddb.app.location_filters import LocationFilterConfig, apply_location_
 from unbounddb.app.queries import (
     get_all_location_names,
     get_all_pokemon_names_from_locations,
+    get_available_pokemon_set,
     get_difficulties,
     get_table_list,
     get_table_preview,
@@ -55,9 +56,46 @@ if not settings.db_path.exists():
 try:
     tables = get_table_list()
     difficulties = get_difficulties()
+    all_locations = get_all_location_names()
 except Exception as e:
     st.error(f"Error loading database: {e}")
     st.stop()
+
+# Global Game Progress Config (collapsible, before tabs)
+with st.expander("Game Progress", expanded=False):
+    st.caption("Configure your current game progress to filter available Pokemon in the Ranker and Locations tabs.")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        global_has_surf = st.checkbox("Surf", value=True, key="global_surf")
+        global_has_dive = st.checkbox("Dive", value=True, key="global_dive")
+    with col2:
+        global_has_rock_smash = st.checkbox("Rock Smash", value=True, key="global_rock_smash")
+        global_post_game = st.checkbox("Post Game", value=True, key="global_post_game")
+    with col3:
+        global_rod_level = st.selectbox(
+            "Rod Level",
+            options=["Super Rod", "Good Rod", "Old Rod", "None"],
+            index=0,
+            key="global_rod",
+        )
+    with col4:
+        global_accessible_locations = st.multiselect(
+            "Accessible Locations",
+            options=all_locations,
+            default=[],
+            key="global_accessible",
+            help="Leave empty to show all locations",
+        )
+
+# Build global filter config
+global_filter_config = LocationFilterConfig(
+    has_surf=global_has_surf,
+    has_dive=global_has_dive,
+    rod_level=global_rod_level,
+    has_rock_smash=global_has_rock_smash,
+    post_game=global_post_game,
+    accessible_locations=global_accessible_locations if global_accessible_locations else None,
+)
 
 # Main content area - 3 tabs with inline controls
 tab1, tab2, tab3 = st.tabs(["Browse", "Trainer Matchups", "Pokemon Locations"])
@@ -506,9 +544,12 @@ with tab2:
                         key="ranker_show_all",
                     )
 
-                    # Get rankings
+                    # Get available Pokemon based on game progress
+                    available_pokemon = get_available_pokemon_set(global_filter_config)
+
+                    # Get rankings - filter by available Pokemon
                     limit = 0 if show_all_pokemon else 50
-                    rankings_df = rank_pokemon_for_trainer(trainer_id, top_n=limit)
+                    rankings_df = rank_pokemon_for_trainer(trainer_id, top_n=limit, available_pokemon=available_pokemon)
 
                     if rankings_df.is_empty():
                         st.warning("Could not rank Pokemon. Make sure move data is available.")
@@ -622,58 +663,25 @@ with tab2:
 
 # Tab 3: Pokemon Locations
 with tab3:
-    # Get available Pokemon and locations for filters
+    # Get available Pokemon for search
     location_pokemon = get_all_pokemon_names_from_locations()
-    all_locations = get_all_location_names()
 
-    # Horizontal filter bar - Row 1: Pokemon selectbox, Surf, Dive, Rock Smash
-    filter_row1_col1, filter_row1_col2, filter_row1_col3, filter_row1_col4 = st.columns([3, 1, 1, 1])
-
-    with filter_row1_col1:
-        selected_pokemon = st.selectbox(
-            "Pokemon",
-            options=["Select a Pokemon...", *location_pokemon],
-            index=0,
-            key="loc_pokemon_search",
-        )
-
-    with filter_row1_col2:
-        has_surf = st.checkbox("Surf", value=True, key="loc_has_surf")
-
-    with filter_row1_col3:
-        has_dive = st.checkbox("Dive", value=True, key="loc_has_dive")
-
-    with filter_row1_col4:
-        has_rock_smash = st.checkbox("Rock Smash", value=True, key="loc_has_rock_smash")
-
-    # Horizontal filter bar - Row 2: Rod Level, Post Game, Accessible Locations
-    filter_row2_col1, filter_row2_col2, filter_row2_col3 = st.columns([2, 1, 3])
-
-    with filter_row2_col1:
-        rod_level = st.selectbox(
-            "Rod Level",
-            options=["Super Rod", "Good Rod", "Old Rod", "None"],
-            index=0,
-            key="loc_rod_level",
-        )
-
-    with filter_row2_col2:
-        post_game = st.checkbox("Post Game", value=True, key="loc_post_game")
-
-    with filter_row2_col3:
-        accessible_locations = st.multiselect(
-            "Accessible Locations",
-            options=all_locations,
-            default=[],
-            key="loc_accessible",
-            help="Leave empty to show all locations",
-        )
+    # Pokemon search selectbox
+    selected_pokemon = st.selectbox(
+        "Pokemon",
+        options=["Select a Pokemon...", *location_pokemon],
+        index=0,
+        key="loc_pokemon_search",
+    )
 
     st.divider()
 
     # Results section
     if selected_pokemon == "Select a Pokemon...":
-        st.info("Select a Pokemon above to see where it can be caught.")
+        st.info(
+            "Select a Pokemon above to see where it can be caught. "
+            "Use the Game Progress section above to filter by your current progress."
+        )
     else:
         st.header(f"Catch Locations for {selected_pokemon}")
 
@@ -683,19 +691,14 @@ with tab3:
         if locations_df.is_empty():
             st.warning(f"No catch locations found for {selected_pokemon}.")
         else:
-            # Apply filters
-            filter_config = LocationFilterConfig(
-                has_surf=has_surf,
-                has_dive=has_dive,
-                rod_level=rod_level,
-                has_rock_smash=has_rock_smash,
-                post_game=post_game,
-                accessible_locations=accessible_locations if accessible_locations else None,
-            )
-            filtered_df = apply_location_filters(locations_df, filter_config)
+            # Apply global filters
+            filtered_df = apply_location_filters(locations_df, global_filter_config)
 
             if filtered_df.is_empty():
-                st.warning("No locations match the current filters. Try adjusting your game progress settings above.")
+                st.warning(
+                    "No locations match the current filters. "
+                    "Try adjusting the Game Progress section at the top of the page."
+                )
             else:
                 st.subheader(f"Found in {len(filtered_df)} location(s)")
 

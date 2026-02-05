@@ -372,6 +372,7 @@ def rank_pokemon_for_trainer(
     trainer_id: int,
     db_path: Path | None = None,
     top_n: int = 50,
+    available_pokemon: set[str] | None = None,
 ) -> pl.DataFrame:
     """Rank all Pokemon for a trainer matchup using composite scoring.
 
@@ -382,6 +383,8 @@ def rank_pokemon_for_trainer(
         trainer_id: ID of the trainer to analyze.
         db_path: Optional path to database.
         top_n: Number of top results to return (0 for all).
+        available_pokemon: Optional set of Pokemon names to filter by. If provided,
+            only Pokemon in this set will be included in the rankings.
 
     Returns:
         DataFrame with columns:
@@ -402,6 +405,10 @@ def rank_pokemon_for_trainer(
     # Get all Pokemon and moves
     all_pokemon = get_all_pokemon_with_stats(db_path)
     all_moves = get_all_learnable_offensive_moves(db_path)
+
+    # Filter by available Pokemon if specified
+    if available_pokemon is not None:
+        all_pokemon = all_pokemon.filter(pl.col("name").is_in(available_pokemon))
 
     if all_pokemon.is_empty():
         return pl.DataFrame(

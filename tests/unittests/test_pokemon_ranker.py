@@ -1,6 +1,8 @@
 # ABOUTME: Unit tests for Pokemon ranker scoring functions.
 # ABOUTME: Tests defense, offense, stat, BST scoring, and coverage logic for trainer matchups.
 
+from unittest.mock import patch
+
 import polars as pl
 
 from unbounddb.app.tools.pokemon_ranker import (
@@ -9,6 +11,7 @@ from unbounddb.app.tools.pokemon_ranker import (
     calculate_defense_score,
     calculate_offense_score,
     calculate_stat_score,
+    rank_pokemon_for_trainer,
 )
 
 
@@ -783,3 +786,129 @@ class TestCoverage:
 
         assert covered_keys == []
         assert count == 0
+
+
+class TestRankPokemonFiltersByAvailableSet:
+    """Tests for the available_pokemon filter in rank_pokemon_for_trainer."""
+
+    def test_available_pokemon_filters_results(self) -> None:
+        """When available_pokemon is provided, only those Pokemon should appear."""
+        # Create mock Pokemon data
+        mock_pokemon = pl.DataFrame(
+            {
+                "pokemon_key": ["pikachu", "charmander", "bulbasaur"],
+                "name": ["Pikachu", "Charmander", "Bulbasaur"],
+                "type1": ["Electric", "Fire", "Grass"],
+                "type2": [None, None, "Poison"],
+                "attack": [55, 52, 49],
+                "sp_attack": [50, 60, 65],
+                "defense": [40, 43, 49],
+                "sp_defense": [50, 50, 65],
+                "speed": [90, 65, 45],
+                "bst": [320, 309, 318],
+            }
+        )
+
+        # Create mock moves data
+        mock_moves = pl.DataFrame(
+            {
+                "pokemon_key": ["pikachu", "charmander", "bulbasaur"],
+                "move_key": ["thunderbolt", "ember", "vine_whip"],
+                "learn_method": ["level", "level", "level"],
+                "level": [26, 10, 13],
+                "move_name": ["Thunderbolt", "Ember", "Vine Whip"],
+                "move_type": ["Electric", "Fire", "Grass"],
+                "category": ["Special", "Special", "Physical"],
+                "power": [90, 40, 45],
+            }
+        )
+
+        # Mock trainer analysis functions
+        mock_team = [
+            {"pokemon_key": "squirtle", "type1": "Water", "type2": None, "slot": 1},
+        ]
+
+        with (
+            patch(
+                "unbounddb.app.tools.pokemon_ranker.get_all_pokemon_with_stats",
+                return_value=mock_pokemon,
+            ),
+            patch(
+                "unbounddb.app.tools.pokemon_ranker.get_all_learnable_offensive_moves",
+                return_value=mock_moves,
+            ),
+            patch(
+                "unbounddb.app.tools.pokemon_ranker.get_trainer_move_types",
+                return_value=["Water"],
+            ),
+            patch(
+                "unbounddb.app.tools.pokemon_ranker.get_recommended_types",
+                return_value=[{"type": "Electric", "score": 20, "rank": 1}],
+            ),
+            patch(
+                "unbounddb.app.tools.pokemon_ranker.analyze_trainer_defensive_profile",
+                return_value={"recommendation": "Use Special moves"},
+            ),
+            patch(
+                "unbounddb.app.tools.pokemon_ranker.get_trainer_pokemon_types",
+                return_value=mock_team,
+            ),
+        ):
+            # Test without filter - should get all 3 Pokemon
+            result_all = rank_pokemon_for_trainer(trainer_id=1, top_n=0)
+            assert len(result_all) == 3
+
+            # Test with filter - should only get Pikachu and Charmander
+            available = {"Pikachu", "Charmander"}
+            result_filtered = rank_pokemon_for_trainer(trainer_id=1, top_n=0, available_pokemon=available)
+            assert len(result_filtered) == 2
+            names = set(result_filtered["name"].to_list())
+            assert names == {"Pikachu", "Charmander"}
+            assert "Bulbasaur" not in names
+
+    def test_empty_available_pokemon_returns_empty(self) -> None:
+        """When available_pokemon is empty set, no Pokemon should appear."""
+        mock_pokemon = pl.DataFrame(
+            {
+                "pokemon_key": ["pikachu"],
+                "name": ["Pikachu"],
+                "type1": ["Electric"],
+                "type2": [None],
+                "attack": [55],
+                "sp_attack": [50],
+                "defense": [40],
+                "sp_defense": [50],
+                "speed": [90],
+                "bst": [320],
+            }
+        )
+
+        with (
+            patch(
+                "unbounddb.app.tools.pokemon_ranker.get_all_pokemon_with_stats",
+                return_value=mock_pokemon,
+            ),
+            patch(
+                "unbounddb.app.tools.pokemon_ranker.get_all_learnable_offensive_moves",
+                return_value=pl.DataFrame(),
+            ),
+            patch(
+                "unbounddb.app.tools.pokemon_ranker.get_trainer_move_types",
+                return_value=[],
+            ),
+            patch(
+                "unbounddb.app.tools.pokemon_ranker.get_recommended_types",
+                return_value=[],
+            ),
+            patch(
+                "unbounddb.app.tools.pokemon_ranker.analyze_trainer_defensive_profile",
+                return_value={"recommendation": "Either works"},
+            ),
+            patch(
+                "unbounddb.app.tools.pokemon_ranker.get_trainer_pokemon_types",
+                return_value=[],
+            ),
+        ):
+            # Empty available set should return empty DataFrame
+            result = rank_pokemon_for_trainer(trainer_id=1, top_n=0, available_pokemon=set())
+            assert result.is_empty()

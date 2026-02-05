@@ -2,6 +2,7 @@
 ABOUTME: Provides type/move search and data retrieval helpers."""
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import duckdb
 import polars as pl
@@ -9,6 +10,9 @@ import polars as pl
 from unbounddb.build.database import get_connection
 from unbounddb.build.normalize import slugify
 from unbounddb.settings import settings
+
+if TYPE_CHECKING:
+    from unbounddb.app.location_filters import LocationFilterConfig
 
 
 def _get_conn(db_path: Path | None = None) -> duckdb.DuckDBPyConnection:
@@ -366,6 +370,100 @@ def get_pre_evolutions(pokemon_name: str, db_path: Path | None = None) -> list[s
     except Exception:
         conn.close()
         return []
+
+
+def get_all_evolutions(pokemon_name: str, db_path: Path | None = None) -> list[str]:
+    """Get all evolutions of a Pokemon using recursive CTE.
+
+    Walks the evolution chain forward to find all Pokemon that the given
+    Pokemon eventually evolves into.
+
+    Args:
+        pokemon_name: The Pokemon name to find evolutions for (case-insensitive).
+        db_path: Optional path to database.
+
+    Returns:
+        List of evolution names.
+        For "Charmander" returns ["Charmeleon", "Charizard"].
+        For Pokemon with no evolutions returns [].
+    """
+    conn = _get_conn(db_path)
+
+    query = """
+    WITH RECURSIVE evos AS (
+        SELECT from_pokemon, to_pokemon
+        FROM evolutions
+        WHERE LOWER(from_pokemon) = LOWER(?)
+
+        UNION ALL
+
+        SELECT e.from_pokemon, e.to_pokemon
+        FROM evolutions e
+        JOIN evos ev ON LOWER(e.from_pokemon) = LOWER(ev.to_pokemon)
+    )
+    SELECT DISTINCT to_pokemon FROM evos
+    """
+
+    try:
+        result = conn.execute(query, [pokemon_name]).fetchall()
+        conn.close()
+        return [r[0] for r in result]
+    except Exception:
+        conn.close()
+        return []
+
+
+def get_available_pokemon_set(
+    filter_config: "LocationFilterConfig",
+    db_path: Path | None = None,
+) -> set[str]:
+    """Get set of Pokemon names available given game progress filters.
+
+    Returns Pokemon whose pre-evolution chain has at least one catch location
+    passing the filters. Also includes all evolutions of catchable Pokemon.
+
+    Args:
+        filter_config: Configuration for location filtering based on game progress.
+        db_path: Optional path to database.
+
+    Returns:
+        Set of Pokemon names for O(1) lookup.
+    """
+    # Import here to avoid circular import
+    from unbounddb.app.location_filters import apply_location_filters  # noqa: PLC0415
+
+    conn = _get_conn(db_path)
+
+    # Get all locations from DB
+    try:
+        all_locations = conn.execute(
+            "SELECT pokemon, location_name, encounter_method, encounter_notes, requirement FROM locations"
+        ).pl()
+        conn.close()
+    except Exception:
+        conn.close()
+        return set()
+
+    if all_locations.is_empty():
+        return set()
+
+    # Apply game progress filters
+    filtered = apply_location_filters(all_locations, filter_config)
+
+    if filtered.is_empty():
+        return set()
+
+    # Get base catchable Pokemon
+    catchable = set(filtered["pokemon"].unique().to_list())
+
+    # Add all evolutions of catchable Pokemon
+    available: set[str] = set()
+    for pokemon in catchable:
+        available.add(pokemon)
+        evolutions = get_all_evolutions(pokemon, db_path)
+        available.update(evolutions)
+
+    return available
 
 
 def get_all_location_names(db_path: Path | None = None) -> list[str]:

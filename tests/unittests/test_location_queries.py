@@ -9,7 +9,9 @@ import pytest
 
 from unbounddb.app.location_filters import LocationFilterConfig, apply_location_filters
 from unbounddb.app.queries import (
+    get_all_evolutions,
     get_all_pokemon_names_from_locations,
+    get_available_pokemon_set,
     get_pre_evolutions,
     search_pokemon_locations,
 )
@@ -543,3 +545,177 @@ class TestGetAllPokemonNamesFromLocations:
         result = get_all_pokemon_names_from_locations(test_db)
 
         assert result == sorted(result)
+
+
+class TestGetAllEvolutions:
+    """Tests for the get_all_evolutions function.
+
+    Tests evolution chain walking forward from a Pokemon.
+    """
+
+    @pytest.fixture
+    def test_db(self, tmp_path: Path) -> Path:
+        """Create a test database with evolution data."""
+        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(str(db_path))
+
+        # Create evolutions table with test data
+        conn.execute("""
+            CREATE TABLE evolutions (
+                from_pokemon VARCHAR,
+                to_pokemon VARCHAR,
+                method VARCHAR,
+                condition VARCHAR,
+                from_pokemon_key VARCHAR,
+                to_pokemon_key VARCHAR
+            )
+        """)
+
+        # Insert test evolution chains
+        # Charmander -> Charmeleon -> Charizard
+        conn.execute("""
+            INSERT INTO evolutions VALUES
+            ('Charmander', 'Charmeleon', 'Level', '16', 'charmander', 'charmeleon'),
+            ('Charmeleon', 'Charizard', 'Level', '36', 'charmeleon', 'charizard'),
+            ('Pichu', 'Pikachu', 'Friendship', '', 'pichu', 'pikachu'),
+            ('Pikachu', 'Raichu', 'Stone', 'Thunder Stone', 'pikachu', 'raichu'),
+            ('Bulbasaur', 'Ivysaur', 'Level', '16', 'bulbasaur', 'ivysaur'),
+            ('Ivysaur', 'Venusaur', 'Level', '32', 'ivysaur', 'venusaur')
+        """)
+
+        conn.close()
+        return db_path
+
+    def test_get_all_evolutions_single_stage(self, test_db: Path) -> None:
+        """Test getting evolution for a single-stage evolution."""
+        result = get_all_evolutions("Charmander", test_db)
+        # Charmander evolves to Charmeleon, then Charmeleon evolves to Charizard
+        assert len(result) == 2
+        assert "Charmeleon" in result
+        assert "Charizard" in result
+
+    def test_get_all_evolutions_middle_stage(self, test_db: Path) -> None:
+        """Test getting evolution from middle of chain."""
+        result = get_all_evolutions("Charmeleon", test_db)
+        # Charmeleon only evolves to Charizard
+        assert result == ["Charizard"]
+
+    def test_get_all_evolutions_no_evolution(self, test_db: Path) -> None:
+        """Test getting evolutions for a Pokemon with no evolutions."""
+        result = get_all_evolutions("Charizard", test_db)
+        # Charizard has no further evolutions
+        assert result == []
+
+    def test_get_all_evolutions_case_insensitive(self, test_db: Path) -> None:
+        """Test that search is case-insensitive."""
+        result = get_all_evolutions("CHARMANDER", test_db)
+        assert len(result) == 2
+        assert "Charmeleon" in result
+        assert "Charizard" in result
+
+    def test_get_all_evolutions_unknown_pokemon(self, test_db: Path) -> None:
+        """Test getting evolutions for unknown Pokemon."""
+        result = get_all_evolutions("Ditto", test_db)
+        assert result == []
+
+
+class TestGetAvailablePokemonSet:
+    """Tests for get_available_pokemon_set function."""
+
+    @pytest.fixture
+    def test_db(self, tmp_path: Path) -> Path:
+        """Create a test database with evolution and location data."""
+        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(str(db_path))
+
+        # Create evolutions table
+        conn.execute("""
+            CREATE TABLE evolutions (
+                from_pokemon VARCHAR,
+                to_pokemon VARCHAR,
+                method VARCHAR,
+                condition VARCHAR,
+                from_pokemon_key VARCHAR,
+                to_pokemon_key VARCHAR
+            )
+        """)
+
+        # Create locations table
+        conn.execute("""
+            CREATE TABLE locations (
+                pokemon VARCHAR,
+                pokemon_key VARCHAR,
+                location_name VARCHAR,
+                encounter_method VARCHAR,
+                encounter_notes VARCHAR,
+                requirement VARCHAR
+            )
+        """)
+
+        # Insert evolution chain: Charmander -> Charmeleon -> Charizard
+        conn.execute("""
+            INSERT INTO evolutions VALUES
+            ('Charmander', 'Charmeleon', 'Level', '16', 'charmander', 'charmeleon'),
+            ('Charmeleon', 'Charizard', 'Level', '36', 'charmeleon', 'charizard')
+        """)
+
+        # Insert location data
+        conn.execute("""
+            INSERT INTO locations VALUES
+            ('Charmander', 'charmander', 'Mt. Ember', 'grass', '', ''),
+            ('Magikarp', 'magikarp', 'Route 1', 'super_rod', '', ''),
+            ('Tentacool', 'tentacool', 'Route 1', 'surfing', '', '')
+        """)
+
+        conn.close()
+        return db_path
+
+    def test_includes_directly_catchable_pokemon(self, test_db: Path) -> None:
+        """Should include Pokemon that are directly catchable."""
+        config = LocationFilterConfig()
+        result = get_available_pokemon_set(config, test_db)
+
+        assert "Charmander" in result
+        assert "Magikarp" in result
+        assert "Tentacool" in result
+
+    def test_includes_evolutions_of_catchable_pokemon(self, test_db: Path) -> None:
+        """Should include evolutions of catchable Pokemon."""
+        config = LocationFilterConfig()
+        result = get_available_pokemon_set(config, test_db)
+
+        # Charmeleon and Charizard evolve from catchable Charmander
+        assert "Charmeleon" in result
+        assert "Charizard" in result
+
+    def test_filters_by_surf(self, test_db: Path) -> None:
+        """Should exclude surfing encounters when has_surf=False."""
+        config = LocationFilterConfig(has_surf=False)
+        result = get_available_pokemon_set(config, test_db)
+
+        # Tentacool is only available via surfing
+        assert "Tentacool" not in result
+        # But Charmander and Magikarp should still be available
+        assert "Charmander" in result
+        assert "Magikarp" in result
+
+    def test_filters_by_rod_level(self, test_db: Path) -> None:
+        """Should exclude rod encounters based on rod_level."""
+        config = LocationFilterConfig(rod_level="Good Rod")
+        result = get_available_pokemon_set(config, test_db)
+
+        # Magikarp requires super_rod which is excluded with Good Rod
+        assert "Magikarp" not in result
+        # But Charmander should still be available
+        assert "Charmander" in result
+
+    def test_returns_empty_set_when_no_matches(self, test_db: Path) -> None:
+        """Should return empty set when no locations match filters."""
+        config = LocationFilterConfig(
+            has_surf=False,
+            rod_level="None",
+            accessible_locations=["Nonexistent Location"],
+        )
+        result = get_available_pokemon_set(config, test_db)
+
+        assert result == set()
