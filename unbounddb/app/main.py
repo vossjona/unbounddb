@@ -706,6 +706,7 @@ with tab3:
                     req = row["requirement"] if row["requirement"] else "-"
                     table_data.append(
                         {
+                            "Catchable Pokemon": row["pokemon"],
                             "Location": row["location_name"],
                             "Method": row["encounter_method"],
                             "Notes": notes,

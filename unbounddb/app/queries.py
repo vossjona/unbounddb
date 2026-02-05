@@ -327,6 +327,47 @@ def get_trainer_team_with_moves(trainer_id: int, db_path: Path | None = None) ->
         raise e
 
 
+def get_pre_evolutions(pokemon_name: str, db_path: Path | None = None) -> list[str]:
+    """Get all pre-evolutions of a Pokemon using recursive CTE.
+
+    Walks the evolution chain backwards to find all Pokemon that eventually
+    evolve into the given Pokemon.
+
+    Args:
+        pokemon_name: The Pokemon name to find pre-evolutions for (case-insensitive).
+        db_path: Optional path to database.
+
+    Returns:
+        List of pre-evolution names, ordered from closest to furthest.
+        For "Charizard" returns ["Charmeleon", "Charmander"].
+        For Pokemon with no pre-evolutions returns [].
+    """
+    conn = _get_conn(db_path)
+
+    query = """
+    WITH RECURSIVE pre_evos AS (
+        SELECT from_pokemon, to_pokemon
+        FROM evolutions
+        WHERE LOWER(to_pokemon) = LOWER(?)
+
+        UNION ALL
+
+        SELECT e.from_pokemon, e.to_pokemon
+        FROM evolutions e
+        JOIN pre_evos p ON LOWER(e.to_pokemon) = LOWER(p.from_pokemon)
+    )
+    SELECT DISTINCT from_pokemon FROM pre_evos
+    """
+
+    try:
+        result = conn.execute(query, [pokemon_name]).fetchall()
+        conn.close()
+        return [r[0] for r in result]
+    except Exception:
+        conn.close()
+        return []
+
+
 def get_all_location_names(db_path: Path | None = None) -> list[str]:
     """Get sorted list of unique location names from the locations table.
 
@@ -350,19 +391,42 @@ def get_all_location_names(db_path: Path | None = None) -> list[str]:
 
 
 def get_all_pokemon_names_from_locations(db_path: Path | None = None) -> list[str]:
-    """Get sorted list of unique Pokemon names from the locations table.
+    """Get sorted list of Pokemon names obtainable from catch locations.
+
+    Includes both directly catchable Pokemon and their evolutions, since
+    searching for an evolved form will show locations for its pre-evolutions.
 
     Args:
         db_path: Optional path to database.
 
     Returns:
-        Sorted list of unique Pokemon names.
+        Sorted list of unique Pokemon names (catchable + evolutions).
     """
     conn = _get_conn(db_path)
 
     try:
+        # Use recursive CTE to find all evolutions of catchable Pokemon
         result = conn.execute(
-            "SELECT DISTINCT pokemon FROM locations WHERE pokemon IS NOT NULL ORDER BY pokemon"
+            """
+            WITH RECURSIVE
+            -- Base: all Pokemon directly in locations table
+            catchable AS (
+                SELECT DISTINCT pokemon FROM locations WHERE pokemon IS NOT NULL
+            ),
+            -- Recursive: find all evolutions of catchable Pokemon
+            all_evolutions AS (
+                -- Start with catchable Pokemon
+                SELECT pokemon AS name FROM catchable
+
+                UNION
+
+                -- Add evolutions of Pokemon we've found so far
+                SELECT e.to_pokemon AS name
+                FROM evolutions e
+                JOIN all_evolutions ae ON LOWER(e.from_pokemon) = LOWER(ae.name)
+            )
+            SELECT DISTINCT name FROM all_evolutions ORDER BY name
+            """
         ).fetchall()
         conn.close()
         return [r[0] for r in result if r[0]]
@@ -372,27 +436,38 @@ def get_all_pokemon_names_from_locations(db_path: Path | None = None) -> list[st
 
 
 def search_pokemon_locations(pokemon_name: str, db_path: Path | None = None) -> pl.DataFrame:
-    """Search for all locations where a Pokemon can be caught.
+    """Search for all locations where a Pokemon or its pre-evolutions can be caught.
+
+    Automatically includes locations for all pre-evolutions of the given Pokemon.
+    For example, searching for "Charizard" will also return locations for
+    Charmeleon and Charmander.
 
     Args:
         pokemon_name: The Pokemon name to search for (case-insensitive).
         db_path: Optional path to database.
 
     Returns:
-        DataFrame with columns: location_name, encounter_method, encounter_notes, requirement.
+        DataFrame with columns: pokemon, location_name, encounter_method,
+        encounter_notes, requirement. The pokemon column shows which Pokemon
+        actually spawns at that location.
     """
+    # Get all pre-evolutions
+    pre_evos = get_pre_evolutions(pokemon_name, db_path)
+    all_pokemon = [pokemon_name, *pre_evos]
+
     conn = _get_conn(db_path)
 
     try:
-        result = conn.execute(
-            """
-            SELECT location_name, encounter_method, encounter_notes, requirement
+        # Build parameterized query for all Pokemon in the chain
+        placeholders = ", ".join(["LOWER(?)" for _ in all_pokemon])
+        query = f"""
+            SELECT pokemon, location_name, encounter_method, encounter_notes, requirement
             FROM locations
-            WHERE LOWER(pokemon) = LOWER(?)
-            ORDER BY location_name, encounter_method
-            """,
-            [pokemon_name],
-        ).pl()
+            WHERE LOWER(pokemon) IN ({placeholders})
+            ORDER BY pokemon, location_name, encounter_method
+        """  # noqa: S608
+
+        result = conn.execute(query, all_pokemon).pl()
         conn.close()
         return result
     except Exception as e:

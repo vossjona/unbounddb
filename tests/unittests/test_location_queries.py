@@ -1,10 +1,18 @@
 # ABOUTME: Unit tests for the location query functions and filter logic.
 # ABOUTME: Tests location search, Pokemon lookup, and filter application.
 
+from pathlib import Path
+
+import duckdb
 import polars as pl
 import pytest
 
 from unbounddb.app.location_filters import LocationFilterConfig, apply_location_filters
+from unbounddb.app.queries import (
+    get_all_pokemon_names_from_locations,
+    get_pre_evolutions,
+    search_pokemon_locations,
+)
 
 
 class TestApplyLocationFiltersHasSurf:
@@ -258,6 +266,7 @@ class TestApplyLocationFiltersEmptyInput:
         """Empty input DataFrame should return empty DataFrame."""
         df = pl.DataFrame(
             schema={
+                "pokemon": pl.String,
                 "location_name": pl.String,
                 "encounter_method": pl.String,
                 "encounter_notes": pl.String,
@@ -267,7 +276,13 @@ class TestApplyLocationFiltersEmptyInput:
         config = LocationFilterConfig()
         result = apply_location_filters(df, config)
         assert result.is_empty()
-        assert list(result.columns) == ["location_name", "encounter_method", "encounter_notes", "requirement"]
+        assert list(result.columns) == [
+            "pokemon",
+            "location_name",
+            "encounter_method",
+            "encounter_notes",
+            "requirement",
+        ]
 
 
 class TestApplyLocationFiltersCombined:
@@ -312,3 +327,219 @@ class TestLocationFilterConfigDefaults:
         assert config.has_rock_smash is True
         assert config.post_game is True
         assert config.accessible_locations is None
+
+
+class TestGetPreEvolutions:
+    """Tests for the get_pre_evolutions function.
+
+    Note: These tests require a database with the evolutions table.
+    They use pytest fixtures to create a test database with evolution data.
+    """
+
+    @pytest.fixture
+    def test_db(self, tmp_path: Path) -> Path:
+        """Create a test database with evolution data."""
+        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(str(db_path))
+
+        # Create evolutions table with test data
+        conn.execute("""
+            CREATE TABLE evolutions (
+                from_pokemon VARCHAR,
+                to_pokemon VARCHAR,
+                method VARCHAR,
+                condition VARCHAR,
+                from_pokemon_key VARCHAR,
+                to_pokemon_key VARCHAR
+            )
+        """)
+
+        # Insert test evolution chains
+        # Charmander -> Charmeleon -> Charizard
+        conn.execute("""
+            INSERT INTO evolutions VALUES
+            ('Charmander', 'Charmeleon', 'Level', '16', 'charmander', 'charmeleon'),
+            ('Charmeleon', 'Charizard', 'Level', '36', 'charmeleon', 'charizard'),
+            ('Pichu', 'Pikachu', 'Friendship', '', 'pichu', 'pikachu'),
+            ('Pikachu', 'Raichu', 'Stone', 'Thunder Stone', 'pikachu', 'raichu'),
+            ('Bulbasaur', 'Ivysaur', 'Level', '16', 'bulbasaur', 'ivysaur'),
+            ('Ivysaur', 'Venusaur', 'Level', '32', 'ivysaur', 'venusaur')
+        """)
+
+        conn.close()
+        return db_path
+
+    def test_get_pre_evolutions_single_stage(self, test_db: Path) -> None:
+        """Test getting pre-evolution for a single-stage evolution."""
+        result = get_pre_evolutions("Charmeleon", test_db)
+        assert result == ["Charmander"]
+
+    def test_get_pre_evolutions_two_stage(self, test_db: Path) -> None:
+        """Test getting pre-evolutions for a two-stage evolution chain."""
+        result = get_pre_evolutions("Charizard", test_db)
+        # Should return both Charmeleon and Charmander
+        assert len(result) == 2
+        assert "Charmeleon" in result
+        assert "Charmander" in result
+
+    def test_get_pre_evolutions_no_preevo(self, test_db: Path) -> None:
+        """Test getting pre-evolutions for a Pokemon with no pre-evolutions."""
+        result = get_pre_evolutions("Charmander", test_db)
+        assert result == []
+
+    def test_get_pre_evolutions_case_insensitive(self, test_db: Path) -> None:
+        """Test that search is case-insensitive."""
+        result = get_pre_evolutions("CHARIZARD", test_db)
+        assert len(result) == 2
+        assert "Charmeleon" in result
+        assert "Charmander" in result
+
+
+class TestSearchPokemonLocationsWithPreEvolutions:
+    """Tests for search_pokemon_locations including pre-evolution locations."""
+
+    @pytest.fixture
+    def test_db(self, tmp_path: Path) -> Path:
+        """Create a test database with evolution and location data."""
+        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(str(db_path))
+
+        # Create evolutions table
+        conn.execute("""
+            CREATE TABLE evolutions (
+                from_pokemon VARCHAR,
+                to_pokemon VARCHAR,
+                method VARCHAR,
+                condition VARCHAR,
+                from_pokemon_key VARCHAR,
+                to_pokemon_key VARCHAR
+            )
+        """)
+
+        # Create locations table
+        conn.execute("""
+            CREATE TABLE locations (
+                pokemon VARCHAR,
+                pokemon_key VARCHAR,
+                location_name VARCHAR,
+                encounter_method VARCHAR,
+                encounter_notes VARCHAR,
+                requirement VARCHAR
+            )
+        """)
+
+        # Insert evolution chain: Charmander -> Charmeleon -> Charizard
+        conn.execute("""
+            INSERT INTO evolutions VALUES
+            ('Charmander', 'Charmeleon', 'Level', '16', 'charmander', 'charmeleon'),
+            ('Charmeleon', 'Charizard', 'Level', '36', 'charmeleon', 'charizard')
+        """)
+
+        # Insert location data - Charmander is catchable, Charizard is not
+        conn.execute("""
+            INSERT INTO locations VALUES
+            ('Charmander', 'charmander', 'Mt. Ember', 'grass', '', ''),
+            ('Charmander', 'charmander', 'Fire Path', 'cave', '', 'Beat the League'),
+            ('Magikarp', 'magikarp', 'Route 1', 'old_rod', '', '')
+        """)
+
+        conn.close()
+        return db_path
+
+    def test_search_locations_includes_pre_evolutions(self, test_db: Path) -> None:
+        """Searching for Charizard should include Charmander locations."""
+        result = search_pokemon_locations("Charizard", test_db)
+
+        # Should find Charmander's locations when searching for Charizard
+        assert len(result) == 2
+        assert "Charmander" in result["pokemon"].to_list()
+        assert "Mt. Ember" in result["location_name"].to_list()
+        assert "Fire Path" in result["location_name"].to_list()
+
+    def test_search_locations_returns_pokemon_column(self, test_db: Path) -> None:
+        """Result should include pokemon column showing which Pokemon spawns."""
+        result = search_pokemon_locations("Charizard", test_db)
+
+        assert "pokemon" in result.columns
+        # All results should show Charmander since that's what actually spawns
+        assert all(p == "Charmander" for p in result["pokemon"].to_list())
+
+    def test_search_locations_no_pre_evolutions(self, test_db: Path) -> None:
+        """Pokemon with no pre-evolutions should only return its own locations."""
+        result = search_pokemon_locations("Magikarp", test_db)
+
+        assert len(result) == 1
+        assert result["pokemon"].to_list() == ["Magikarp"]
+        assert result["location_name"].to_list() == ["Route 1"]
+
+
+class TestGetAllPokemonNamesFromLocations:
+    """Tests for get_all_pokemon_names_from_locations including evolutions."""
+
+    @pytest.fixture
+    def test_db(self, tmp_path: Path) -> Path:
+        """Create a test database with evolution and location data."""
+        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(str(db_path))
+
+        # Create evolutions table
+        conn.execute("""
+            CREATE TABLE evolutions (
+                from_pokemon VARCHAR,
+                to_pokemon VARCHAR,
+                method VARCHAR,
+                condition VARCHAR,
+                from_pokemon_key VARCHAR,
+                to_pokemon_key VARCHAR
+            )
+        """)
+
+        # Create locations table
+        conn.execute("""
+            CREATE TABLE locations (
+                pokemon VARCHAR,
+                pokemon_key VARCHAR,
+                location_name VARCHAR,
+                encounter_method VARCHAR,
+                encounter_notes VARCHAR,
+                requirement VARCHAR
+            )
+        """)
+
+        # Insert evolution chain: Charmander -> Charmeleon -> Charizard
+        conn.execute("""
+            INSERT INTO evolutions VALUES
+            ('Charmander', 'Charmeleon', 'Level', '16', 'charmander', 'charmeleon'),
+            ('Charmeleon', 'Charizard', 'Level', '36', 'charmeleon', 'charizard')
+        """)
+
+        # Insert location data - only Charmander is directly catchable
+        conn.execute("""
+            INSERT INTO locations VALUES
+            ('Charmander', 'charmander', 'Mt. Ember', 'grass', '', ''),
+            ('Magikarp', 'magikarp', 'Route 1', 'old_rod', '', '')
+        """)
+
+        conn.close()
+        return db_path
+
+    def test_includes_directly_catchable_pokemon(self, test_db: Path) -> None:
+        """Should include Pokemon that are directly in the locations table."""
+        result = get_all_pokemon_names_from_locations(test_db)
+
+        assert "Charmander" in result
+        assert "Magikarp" in result
+
+    def test_includes_evolutions_of_catchable_pokemon(self, test_db: Path) -> None:
+        """Should include evolutions of catchable Pokemon."""
+        result = get_all_pokemon_names_from_locations(test_db)
+
+        # Charmeleon and Charizard evolve from catchable Charmander
+        assert "Charmeleon" in result
+        assert "Charizard" in result
+
+    def test_returns_sorted_list(self, test_db: Path) -> None:
+        """Should return Pokemon names in sorted order."""
+        result = get_all_pokemon_names_from_locations(test_db)
+
+        assert result == sorted(result)
