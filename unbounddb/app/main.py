@@ -11,8 +11,10 @@ from unbounddb.app.dialogs import (
     show_locations_dialog,
 )
 from unbounddb.app.game_progress_persistence import (
-    PROFILE_NAMES,
+    create_new_profile,
+    delete_profile_by_name,
     get_active_profile_name,
+    get_all_profile_names,
     load_profile,
     save_profile,
     set_active_profile,
@@ -52,6 +54,7 @@ from unbounddb.app.tools.pokemon_ranker import (
     get_recommended_types,
     rank_pokemon_for_trainer,
 )
+from unbounddb.app.user_database import update_profile as _db_update_profile
 from unbounddb.settings import settings
 
 st.set_page_config(
@@ -79,8 +82,9 @@ except Exception as e:
 # Rod level options for index lookup
 ROD_LEVEL_OPTIONS = ["Super Rod", "Good Rod", "Old Rod", "None"]
 
-# Profile selector options: profiles + "None (ignore filters)"
-PROFILE_OPTIONS = [*PROFILE_NAMES, "None (ignore filters)"]
+# Profile selector options: dynamic from database + "None (ignore filters)"
+profile_names = get_all_profile_names()
+PROFILE_OPTIONS = [*profile_names, "None (ignore filters)"]
 
 
 def _on_profile_change() -> None:
@@ -104,7 +108,7 @@ def _on_profile_change() -> None:
     else:
         set_active_profile(selected)
         # Load the new profile's values and update session state
-        new_config = load_profile(selected)
+        new_config, saved_difficulty = load_profile(selected)
         if new_config:
             st.session_state["global_surf"] = new_config.has_surf
             st.session_state["global_dive"] = new_config.has_dive
@@ -113,6 +117,8 @@ def _on_profile_change() -> None:
             st.session_state["global_rod"] = new_config.rod_level
             st.session_state["global_level_cap"] = new_config.level_cap or 0
             st.session_state["global_accessible"] = new_config.accessible_locations or []
+            # Also set the saved difficulty
+            st.session_state["def_difficulty"] = saved_difficulty if saved_difficulty else "Any"
 
 
 def _save_current_progress() -> None:
@@ -130,7 +136,21 @@ def _save_current_progress() -> None:
         accessible_locations=st.session_state.get("global_accessible") or None,
         level_cap=st.session_state.get("global_level_cap") or None,
     )
-    save_profile(active_profile, config)
+    # Get current difficulty to preserve it
+    difficulty = st.session_state.get("def_difficulty")
+    difficulty_to_save = difficulty if difficulty != "Any" else None
+    save_profile(active_profile, config, difficulty=difficulty_to_save)
+
+
+def _save_difficulty() -> None:
+    """Callback to save difficulty selection to current profile."""
+    active_profile = get_active_profile_name()
+    if active_profile is None:
+        return
+
+    difficulty = st.session_state.get("def_difficulty")
+    difficulty_to_save = difficulty if difficulty != "Any" else None
+    _db_update_profile(active_profile, difficulty=difficulty_to_save)
 
 
 # Get active profile name
@@ -152,11 +172,32 @@ selected_profile = st.selectbox(
     help="Select a game progress profile or 'None' to show all Pokemon without filtering",
 )
 
+# Manage Profiles expander
+with st.expander("Manage Profiles", expanded=False):
+    new_name = st.text_input("New profile name", key="new_profile_input")
+    if st.button("Create Profile", key="create_profile_btn"):
+        if new_name and new_name.strip():
+            if create_new_profile(new_name.strip()):
+                st.success(f"Created profile '{new_name}'")
+                st.rerun()
+            else:
+                st.error(f"Profile '{new_name}' already exists")
+        else:
+            st.warning("Please enter a profile name")
+
+    # Delete button (only if a real profile is selected)
+    if (
+        selected_profile != "None (ignore filters)"
+        and st.button(f"Delete '{selected_profile}'", key="delete_profile_btn", type="secondary")
+        and delete_profile_by_name(selected_profile)
+    ):
+        st.rerun()
+
 # Determine if filtering is active
 filtering_active = selected_profile != "None (ignore filters)"
 
 # Load saved config for the selected profile (or defaults if None)
-saved_config = load_profile(selected_profile if filtering_active else None)
+saved_config, saved_difficulty = load_profile(selected_profile if filtering_active else None)
 
 # Initialize session state from saved config on first load (when keys don't exist)
 if filtering_active and saved_config is not None:
@@ -174,6 +215,9 @@ if filtering_active and saved_config is not None:
         st.session_state["global_level_cap"] = saved_config.level_cap or 0
     if "global_accessible" not in st.session_state:
         st.session_state["global_accessible"] = saved_config.accessible_locations or []
+    # Also set the saved difficulty
+    if "def_difficulty" not in st.session_state and saved_difficulty:
+        st.session_state["def_difficulty"] = saved_difficulty
 
 # Global Game Progress Config (collapsible, hidden when profile is None)
 if filtering_active and saved_config is not None:
@@ -261,11 +305,20 @@ with tab2:
     trainer_col1, trainer_col2, trainer_col3 = st.columns([2, 3, 1])
 
     with trainer_col1:
+        # Get saved difficulty index for default selection
+        difficulty_options = ["Any", *difficulties]
+        default_difficulty_index = 0
+        if "def_difficulty" in st.session_state:
+            saved_diff = st.session_state["def_difficulty"]
+            if saved_diff in difficulty_options:
+                default_difficulty_index = difficulty_options.index(saved_diff)
+
         selected_difficulty = st.selectbox(
             "Difficulty",
-            options=["Any", *difficulties],
-            index=0,
+            options=difficulty_options,
+            index=default_difficulty_index,
             key="def_difficulty",
+            on_change=_save_difficulty,
         )
 
     # Get trainers filtered by difficulty

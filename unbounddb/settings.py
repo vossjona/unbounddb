@@ -72,6 +72,12 @@ class Settings(BaseSettings):
 
     @computed_field  # type: ignore[prop-decorator]
     @property
+    def user_db_path(self) -> Path:
+        """Path to the user data DuckDB database file."""
+        return self.data_dir / "db" / "user_data.duckdb"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
     def configs_dir(self) -> Path:
         """Directory containing configuration files."""
         return self.PROJECT_ROOT / "configs"

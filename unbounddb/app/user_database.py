@@ -1,0 +1,303 @@
+# ABOUTME: DuckDB operations for user profile storage.
+# ABOUTME: Provides CRUD functions for profiles with game progress and difficulty settings.
+
+import json
+from pathlib import Path
+from typing import Any
+
+import duckdb
+
+from unbounddb.settings import settings
+
+# Schema for the profiles table
+_PROFILES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS profiles (
+    name VARCHAR PRIMARY KEY,
+    active BOOLEAN NOT NULL DEFAULT FALSE,
+    has_surf BOOLEAN NOT NULL DEFAULT FALSE,
+    has_dive BOOLEAN NOT NULL DEFAULT FALSE,
+    rod_level VARCHAR NOT NULL DEFAULT 'None',
+    has_rock_smash BOOLEAN NOT NULL DEFAULT FALSE,
+    post_game BOOLEAN NOT NULL DEFAULT FALSE,
+    accessible_locations VARCHAR,
+    level_cap INTEGER,
+    difficulty VARCHAR
+)
+"""
+
+
+def _get_user_db_path() -> Path:
+    """Get path to user database, allows tests to override via settings."""
+    return settings.user_db_path
+
+
+def get_user_connection(db_path: Path | None = None) -> duckdb.DuckDBPyConnection:
+    """Get a writable connection to the user data database.
+
+    Creates the database and schema if they don't exist.
+
+    Args:
+        db_path: Optional path to database. Defaults to settings.user_db_path.
+
+    Returns:
+        DuckDB connection (writable).
+    """
+    if db_path is None:
+        db_path = _get_user_db_path()
+
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = duckdb.connect(str(db_path))
+    ensure_schema(conn)
+    return conn
+
+
+def ensure_schema(conn: duckdb.DuckDBPyConnection) -> None:
+    """Create the profiles table if it doesn't exist.
+
+    Args:
+        conn: Active DuckDB connection.
+    """
+    conn.execute(_PROFILES_SCHEMA)
+
+
+def list_profiles(db_path: Path | None = None) -> list[str]:
+    """Get all profile names from the database.
+
+    Args:
+        db_path: Optional path to database.
+
+    Returns:
+        List of profile names, sorted alphabetically.
+    """
+    conn = get_user_connection(db_path)
+    try:
+        result = conn.execute("SELECT name FROM profiles ORDER BY name").fetchall()
+        return [row[0] for row in result]
+    finally:
+        conn.close()
+
+
+def get_profile(name: str, db_path: Path | None = None) -> dict[str, Any] | None:
+    """Get a single profile's data by name.
+
+    Args:
+        name: Profile name to retrieve.
+        db_path: Optional path to database.
+
+    Returns:
+        Dictionary with profile fields, or None if not found.
+    """
+    conn = get_user_connection(db_path)
+    try:
+        result = conn.execute(
+            """
+            SELECT name, active, has_surf, has_dive, rod_level, has_rock_smash,
+                   post_game, accessible_locations, level_cap, difficulty
+            FROM profiles WHERE name = ?
+            """,
+            [name],
+        ).fetchone()
+
+        if result is None:
+            return None
+
+        # Parse accessible_locations from JSON string
+        accessible_locations = None
+        if result[7]:
+            try:
+                accessible_locations = json.loads(result[7])
+            except (json.JSONDecodeError, TypeError):
+                accessible_locations = None
+
+        return {
+            "name": result[0],
+            "active": result[1],
+            "has_surf": result[2],
+            "has_dive": result[3],
+            "rod_level": result[4],
+            "has_rock_smash": result[5],
+            "post_game": result[6],
+            "accessible_locations": accessible_locations,
+            "level_cap": result[8],
+            "difficulty": result[9],
+        }
+    finally:
+        conn.close()
+
+
+def create_profile(name: str, db_path: Path | None = None) -> bool:
+    """Create a new profile with default settings.
+
+    Args:
+        name: Profile name to create.
+        db_path: Optional path to database.
+
+    Returns:
+        True if created successfully, False if name already exists.
+    """
+    conn = get_user_connection(db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO profiles (name, active, has_surf, has_dive, rod_level,
+                                  has_rock_smash, post_game)
+            VALUES (?, FALSE, FALSE, FALSE, 'None', FALSE, FALSE)
+            """,
+            [name],
+        )
+        return True
+    except duckdb.ConstraintException:
+        return False
+    finally:
+        conn.close()
+
+
+def update_profile(name: str, db_path: Path | None = None, **fields: object) -> bool:
+    """Update specific fields of a profile.
+
+    Args:
+        name: Profile name to update.
+        db_path: Optional path to database.
+        **fields: Field names and values to update. Valid fields:
+            has_surf, has_dive, rod_level, has_rock_smash, post_game,
+            accessible_locations, level_cap, difficulty
+
+    Returns:
+        True if profile was found and updated, False otherwise.
+    """
+    if not fields:
+        return False
+
+    valid_fields = {
+        "has_surf",
+        "has_dive",
+        "rod_level",
+        "has_rock_smash",
+        "post_game",
+        "accessible_locations",
+        "level_cap",
+        "difficulty",
+    }
+
+    # Filter to only valid fields
+    updates = {k: v for k, v in fields.items() if k in valid_fields}
+    if not updates:
+        return False
+
+    # Convert accessible_locations list to JSON string
+    if "accessible_locations" in updates:
+        loc_value = updates["accessible_locations"]
+        if loc_value is not None and isinstance(loc_value, list):
+            updates["accessible_locations"] = json.dumps(loc_value)
+        elif loc_value is None:
+            updates["accessible_locations"] = None
+
+    conn = get_user_connection(db_path)
+    try:
+        # Build SET clause - field names are from valid_fields set, not user input
+        set_parts = [f"{field} = ?" for field in updates]
+        set_clause = ", ".join(set_parts)
+        values = [*list(updates.values()), name]
+
+        result = conn.execute(
+            f"UPDATE profiles SET {set_clause} WHERE name = ?",  # noqa: S608
+            values,
+        )
+        # DuckDB returns affected row count via fetchall(), not rowcount
+        count_result = result.fetchone()
+        return count_result is not None and count_result[0] > 0
+    finally:
+        conn.close()
+
+
+def delete_profile(name: str, db_path: Path | None = None) -> bool:
+    """Delete a profile by name.
+
+    Args:
+        name: Profile name to delete.
+        db_path: Optional path to database.
+
+    Returns:
+        True if deleted, False if not found.
+    """
+    conn = get_user_connection(db_path)
+    try:
+        result = conn.execute("DELETE FROM profiles WHERE name = ?", [name])
+        # DuckDB returns affected row count via fetchall(), not rowcount
+        count_result = result.fetchone()
+        return count_result is not None and count_result[0] > 0
+    finally:
+        conn.close()
+
+
+def get_active_profile(db_path: Path | None = None) -> str | None:
+    """Get the name of the currently active profile.
+
+    Args:
+        db_path: Optional path to database.
+
+    Returns:
+        Name of the active profile, or None if no profile is active.
+    """
+    conn = get_user_connection(db_path)
+    try:
+        result = conn.execute("SELECT name FROM profiles WHERE active = TRUE").fetchone()
+        return result[0] if result else None
+    finally:
+        conn.close()
+
+
+def set_active_profile(name: str | None, db_path: Path | None = None) -> None:
+    """Set the active profile.
+
+    Clears active status from all profiles, then sets the named profile as active.
+
+    Args:
+        name: Profile name to set as active, or None to deactivate all.
+        db_path: Optional path to database.
+    """
+    conn = get_user_connection(db_path)
+    try:
+        # Clear all active flags first
+        conn.execute("UPDATE profiles SET active = FALSE")
+
+        # Set the new active profile
+        if name is not None:
+            conn.execute("UPDATE profiles SET active = TRUE WHERE name = ?", [name])
+    finally:
+        conn.close()
+
+
+def profile_exists(name: str, db_path: Path | None = None) -> bool:
+    """Check if a profile exists.
+
+    Args:
+        name: Profile name to check.
+        db_path: Optional path to database.
+
+    Returns:
+        True if profile exists, False otherwise.
+    """
+    conn = get_user_connection(db_path)
+    try:
+        result = conn.execute("SELECT 1 FROM profiles WHERE name = ?", [name]).fetchone()
+        return result is not None
+    finally:
+        conn.close()
+
+
+def get_profile_count(db_path: Path | None = None) -> int:
+    """Get the number of profiles in the database.
+
+    Args:
+        db_path: Optional path to database.
+
+    Returns:
+        Number of profiles.
+    """
+    conn = get_user_connection(db_path)
+    try:
+        result = conn.execute("SELECT COUNT(*) FROM profiles").fetchone()
+        return result[0] if result else 0
+    finally:
+        conn.close()

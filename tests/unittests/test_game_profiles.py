@@ -1,16 +1,17 @@
 # ABOUTME: Tests for multi-profile game progress persistence.
-# ABOUTME: Verifies profile loading, saving, migration, and None config handling.
+# ABOUTME: Verifies profile loading, saving, and None config handling.
 
-import json
 from pathlib import Path
 
 import polars as pl
 import pytest
 
+from unbounddb.app import user_database
 from unbounddb.app.game_progress_persistence import (
-    PROFILE_NAMES,
-    _migrate_legacy_file,
+    create_new_profile,
+    delete_profile_by_name,
     get_active_profile_name,
+    get_all_profile_names,
     load_profile,
     save_profile,
     set_active_profile,
@@ -19,55 +20,52 @@ from unbounddb.app.location_filters import LocationFilterConfig, apply_location_
 
 
 @pytest.fixture
-def clean_profile_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Create a clean temporary data directory and patch file paths."""
-    data_dir = tmp_path / "data"
-    data_dir.mkdir()
+def clean_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Create a clean temporary database and patch path."""
+    db_dir = tmp_path / "db"
+    db_dir.mkdir()
+    db_path = db_dir / "user_data.duckdb"
 
-    # Patch the file paths to use temp directory
-    monkeypatch.setattr(
-        "unbounddb.app.game_progress_persistence.GAME_PROFILES_FILE",
-        data_dir / "game_profiles.json",
-    )
-    monkeypatch.setattr(
-        "unbounddb.app.game_progress_persistence.GAME_PROGRESS_FILE",
-        data_dir / "game_progress.json",
-    )
+    # Patch the user_db_path function
+    monkeypatch.setattr(user_database, "_get_user_db_path", lambda: db_path)
 
-    return data_dir
+    return db_path
 
 
 class TestLoadProfile:
     """Tests for load_profile function."""
 
-    def test_load_profile_returns_none_for_none_input(self, clean_profile_files: Path) -> None:
-        """Loading profile with None returns None."""
-        result = load_profile(None)
+    def test_load_profile_returns_none_tuple_for_none_input(self, clean_db: Path) -> None:
+        """Loading profile with None returns (None, None)."""
+        config, difficulty = load_profile(None)
 
-        assert result is None
+        assert config is None
+        assert difficulty is None
 
-    def test_load_profile_returns_config_for_named_profile(self, clean_profile_files: Path) -> None:
+    def test_load_profile_returns_config_for_named_profile(self, clean_db: Path) -> None:
         """Loading a named profile returns LocationFilterConfig."""
-        result = load_profile("jonas")
+        create_new_profile("jonas")
+        config, _difficulty = load_profile("jonas")
 
-        assert isinstance(result, LocationFilterConfig)
+        assert isinstance(config, LocationFilterConfig)
 
-    def test_load_profile_returns_default_for_new_profile(
-        self, clean_profile_files: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_load_profile_returns_default_for_new_profile(self, clean_db: Path) -> None:
         """New profile gets default config (all filters off)."""
-        result = load_profile("jonas")
+        create_new_profile("jonas")
+        config, _difficulty = load_profile("jonas")
 
         # Default config has all HMs disabled
-        assert result is not None
-        assert result.has_surf is False
-        assert result.has_dive is False
-        assert result.rod_level == "None"
-        assert result.has_rock_smash is False
-        assert result.post_game is False
+        assert config is not None
+        assert config.has_surf is False
+        assert config.has_dive is False
+        assert config.rod_level == "None"
+        assert config.has_rock_smash is False
+        assert config.post_game is False
 
-    def test_load_profile_returns_saved_values(self, clean_profile_files: Path) -> None:
+    def test_load_profile_returns_saved_values(self, clean_db: Path) -> None:
         """Loading a profile returns previously saved values."""
+        create_new_profile("jonas")
+
         # Save a config
         config = LocationFilterConfig(
             has_surf=True,
@@ -77,25 +75,36 @@ class TestLoadProfile:
             post_game=False,
             level_cap=35,
         )
-        save_profile("jonas", config)
+        save_profile("jonas", config, difficulty="Expert")
 
         # Load it back
-        result = load_profile("jonas")
+        loaded_config, loaded_difficulty = load_profile("jonas")
 
-        assert result is not None
-        assert result.has_surf is True
-        assert result.has_dive is False
-        assert result.rod_level == "Good Rod"
-        assert result.has_rock_smash is True
-        assert result.post_game is False
-        assert result.level_cap == 35
+        assert loaded_config is not None
+        assert loaded_config.has_surf is True
+        assert loaded_config.has_dive is False
+        assert loaded_config.rod_level == "Good Rod"
+        assert loaded_config.has_rock_smash is True
+        assert loaded_config.post_game is False
+        assert loaded_config.level_cap == 35
+        assert loaded_difficulty == "Expert"
+
+    def test_load_nonexistent_profile_returns_default(self, clean_db: Path) -> None:
+        """Loading nonexistent profile returns default config."""
+        config, difficulty = load_profile("nonexistent")
+
+        assert config is not None
+        assert config.has_surf is False
+        assert difficulty is None
 
 
 class TestSaveProfile:
     """Tests for save_profile function."""
 
-    def test_save_profile_persists_data(self, clean_profile_files: Path) -> None:
+    def test_save_profile_persists_data(self, clean_db: Path) -> None:
         """Saved profile data persists across loads."""
+        create_new_profile("tim")
+
         config = LocationFilterConfig(
             has_surf=True,
             has_dive=True,
@@ -105,26 +114,29 @@ class TestSaveProfile:
             level_cap=50,
         )
 
-        save_profile("tim", config)
+        save_profile("tim", config, difficulty="Veteran")
 
-        # Load directly from file to verify persistence
-        profiles_file = clean_profile_files / "game_profiles.json"
-        with profiles_file.open() as f:
-            data = json.load(f)
+        # Load and verify
+        loaded_config, loaded_difficulty = load_profile("tim")
 
-        assert data["profiles"]["tim"]["has_surf"] is True
-        assert data["profiles"]["tim"]["level_cap"] == 50
+        assert loaded_config is not None
+        assert loaded_config.has_surf is True
+        assert loaded_config.level_cap == 50
+        assert loaded_difficulty == "Veteran"
 
-    def test_save_profile_does_not_affect_other_profiles(self, clean_profile_files: Path) -> None:
+    def test_save_profile_does_not_affect_other_profiles(self, clean_db: Path) -> None:
         """Saving one profile doesn't change another profile's data."""
+        create_new_profile("jonas")
+        create_new_profile("tim")
+
         config_jonas = LocationFilterConfig(has_surf=True, has_dive=False)
         config_tim = LocationFilterConfig(has_surf=False, has_dive=True)
 
         save_profile("jonas", config_jonas)
         save_profile("tim", config_tim)
 
-        loaded_jonas = load_profile("jonas")
-        loaded_tim = load_profile("tim")
+        loaded_jonas, _ = load_profile("jonas")
+        loaded_tim, _ = load_profile("tim")
 
         assert loaded_jonas is not None
         assert loaded_jonas.has_surf is True
@@ -138,110 +150,78 @@ class TestSaveProfile:
 class TestActiveProfile:
     """Tests for get/set active profile functions."""
 
-    def test_get_active_profile_returns_jonas_by_default(self, clean_profile_files: Path) -> None:
-        """Default active profile is 'jonas'."""
+    def test_get_active_profile_returns_none_by_default(self, clean_db: Path) -> None:
+        """Default active profile is None."""
+        create_new_profile("jonas")
         result = get_active_profile_name()
 
-        assert result == "jonas"
+        assert result is None
 
-    def test_set_active_profile_persists(self, clean_profile_files: Path) -> None:
+    def test_set_active_profile_persists(self, clean_db: Path) -> None:
         """Setting active profile persists the change."""
+        create_new_profile("jonas")
+        create_new_profile("tim")
+
         set_active_profile("tim")
 
         result = get_active_profile_name()
 
         assert result == "tim"
 
-    def test_set_active_profile_to_none(self, clean_profile_files: Path) -> None:
-        """Setting active profile to None returns None on get."""
+    def test_set_active_profile_to_none(self, clean_db: Path) -> None:
+        """Setting active profile to None clears it."""
+        create_new_profile("jonas")
+        set_active_profile("jonas")
         set_active_profile(None)
-
-        # Read raw file to verify None is stored
-        profiles_file = clean_profile_files / "game_profiles.json"
-        with profiles_file.open() as f:
-            data = json.load(f)
-
-        assert data["active_profile"] is None
-
-    def test_get_active_profile_defaults_invalid_to_jonas(self, clean_profile_files: Path) -> None:
-        """Invalid stored profile name defaults to 'jonas'."""
-        # Manually write invalid profile
-        profiles_file = clean_profile_files / "game_profiles.json"
-        profiles_file.write_text('{"profiles": {}, "active_profile": "invalid"}')
 
         result = get_active_profile_name()
 
-        assert result == "jonas"
+        assert result is None
 
 
-class TestMigrateLegacyFile:
-    """Tests for legacy file migration."""
+class TestDynamicProfiles:
+    """Tests for dynamic profile creation and deletion."""
 
-    def test_migrate_legacy_file_copies_to_jonas(self, clean_profile_files: Path) -> None:
-        """Legacy game_progress.json is migrated to jonas profile."""
-        # Create legacy file with custom settings
-        legacy_file = clean_profile_files / "game_progress.json"
-        legacy_data = {
-            "has_surf": True,
-            "has_dive": True,
-            "rod_level": "Good Rod",
-            "has_rock_smash": False,
-            "post_game": True,
-            "level_cap": 45,
-        }
-        with legacy_file.open("w") as f:
-            json.dump(legacy_data, f)
+    def test_get_all_profile_names_returns_sorted(self, clean_db: Path) -> None:
+        """Profile names are returned sorted."""
+        create_new_profile("tim")
+        create_new_profile("alice")
+        create_new_profile("jonas")
 
-        # Trigger migration by loading a profile
-        _migrate_legacy_file()
+        names = get_all_profile_names()
 
-        # Verify migration
-        jonas_config = load_profile("jonas")
+        assert names == ["alice", "jonas", "tim"]
 
-        assert jonas_config is not None
-        assert jonas_config.has_surf is True
-        assert jonas_config.has_dive is True
-        assert jonas_config.rod_level == "Good Rod"
-        assert jonas_config.has_rock_smash is False
-        assert jonas_config.post_game is True
-        assert jonas_config.level_cap == 45
+    def test_create_new_profile_returns_true(self, clean_db: Path) -> None:
+        """Creating a new profile returns True."""
+        result = create_new_profile("jonas")
 
-    def test_migrate_legacy_file_creates_tim_with_defaults(self, clean_profile_files: Path) -> None:
-        """Migration creates tim profile with default (disabled) settings."""
-        # Create legacy file
-        legacy_file = clean_profile_files / "game_progress.json"
-        with legacy_file.open("w") as f:
-            json.dump({"has_surf": True}, f)
+        assert result is True
 
-        # Trigger migration
-        _migrate_legacy_file()
+    def test_create_duplicate_profile_returns_false(self, clean_db: Path) -> None:
+        """Creating duplicate profile returns False."""
+        create_new_profile("jonas")
+        result = create_new_profile("jonas")
 
-        # Verify tim has defaults
-        tim_config = load_profile("tim")
+        assert result is False
 
-        assert tim_config is not None
-        assert tim_config.has_surf is False
-        assert tim_config.has_dive is False
-        assert tim_config.rod_level == "None"
+    def test_delete_profile_removes_it(self, clean_db: Path) -> None:
+        """Deleting a profile removes it from the list."""
+        create_new_profile("jonas")
+        create_new_profile("tim")
 
-    def test_migrate_skips_if_profiles_exist(self, clean_profile_files: Path) -> None:
-        """Migration doesn't run if game_profiles.json already exists."""
-        # Create existing profiles file
-        profiles_file = clean_profile_files / "game_profiles.json"
-        profiles_file.write_text('{"profiles": {"jonas": {"has_surf": false}}, "active_profile": "jonas"}')
+        delete_profile_by_name("jonas")
 
-        # Create legacy file that should be ignored
-        legacy_file = clean_profile_files / "game_progress.json"
-        with legacy_file.open("w") as f:
-            json.dump({"has_surf": True}, f)
+        names = get_all_profile_names()
 
-        # Trigger migration
-        _migrate_legacy_file()
+        assert "jonas" not in names
+        assert "tim" in names
 
-        # Verify profiles file wasn't changed
-        jonas_config = load_profile("jonas")
-        assert jonas_config is not None
-        assert jonas_config.has_surf is False  # Original value, not migrated
+    def test_delete_nonexistent_profile_returns_false(self, clean_db: Path) -> None:
+        """Deleting nonexistent profile returns False."""
+        result = delete_profile_by_name("nonexistent")
+
+        assert result is False
 
 
 class TestApplyLocationFiltersWithNone:
@@ -281,13 +261,3 @@ class TestApplyLocationFiltersWithNone:
         # Surfing location should be filtered out
         assert len(result) == 1
         assert result["location_name"][0] == "Route 1"
-
-
-class TestProfileNames:
-    """Tests for profile name constants."""
-
-    def test_profile_names_contains_jonas_and_tim(self) -> None:
-        """PROFILE_NAMES contains exactly jonas and tim."""
-        assert "jonas" in PROFILE_NAMES
-        assert "tim" in PROFILE_NAMES
-        assert len(PROFILE_NAMES) == 2

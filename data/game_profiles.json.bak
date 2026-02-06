@@ -1,0 +1,39 @@
+{
+  "profiles": {
+    "jonas": {
+      "has_surf": false,
+      "has_dive": false,
+      "rod_level": "Old Rod",
+      "has_rock_smash": false,
+      "post_game": false,
+      "accessible_locations": [
+        "Blizzard City",
+        "Cinder Volcano",
+        "Dresco Town",
+        "Flower Paradise",
+        "Grim Woods",
+        "Icicle Cave",
+        "KBT Expressway",
+        "Route 1",
+        "Route 2",
+        "Route 3",
+        "Route 3 (Beach)",
+        "Route 4",
+        "Route 5",
+        "Route 6",
+        "Route 7"
+      ],
+      "level_cap": 32
+    },
+    "tim": {
+      "has_surf": true,
+      "has_dive": false,
+      "rod_level": "Old Rod",
+      "has_rock_smash": true,
+      "post_game": false,
+      "accessible_locations": null,
+      "level_cap": 45
+    }
+  },
+  "active_profile": "tim"
+}
