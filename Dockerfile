@@ -1,8 +1,6 @@
 # syntax=docker/dockerfile:1
-FROM dockerregistry.mgm-tp.com/python:3.11-slim-bookworm AS builder
+FROM python:3.11-slim-bookworm AS builder
 
-# required
-ARG UV_INDEX_MGMART_USERNAME
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Enable bytecode compilation
@@ -18,20 +16,14 @@ COPY pyproject.toml uv.lock ./
 
 # Install dependencies
 RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=secret,id=mgmart_password \
-    UV_INDEX_MGMART_PASSWORD="$(cat /run/secrets/mgmart_password)" \
     uv sync --locked --no-install-project --no-editable --no-dev
 
 FROM builder AS ci
-
-ARG UV_INDEX_MGMART_USERNAME
 
 ENV PATH="/app/.venv/bin:$PATH"
 
 # install dev dependencies
 RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=secret,id=mgmart_password \
-    UV_INDEX_MGMART_PASSWORD="$(cat /run/secrets/mgmart_password)" \
     uv sync --locked --group dev --group doc
 
 # copy files and folders
@@ -40,14 +32,14 @@ COPY . .
 # keep the container running
 CMD ["sleep", "infinity"]
 
-FROM dockerregistry.mgm-tp.com/python:3.11-slim-bookworm AS release
+FROM python:3.11-slim-bookworm AS release
 
 # https://specs.opencontainers.org/image-spec/annotations/
 LABEL org.opencontainers.image.title="UnboundDB" \
       org.opencontainers.image.version="0.1.0" \
       org.opencontainers.image.description="Helps with Unbound" \
-      org.opencontainers.image.authors="Jonas Voss <jonas.voss@mgm-tp.com>" \
-      org.opencontainers.image.source="empty"
+      org.opencontainers.image.authors="Jonas" \
+      org.opencontainers.image.source="https://github.com/vossjona/unbounddb"
 
 ARG UID=1000
 ARG GID=1000
@@ -69,4 +61,3 @@ COPY --chown=mgm:mgm unbounddb ./unbounddb
 
 # use mgm user instead of root
 USER mgm:mgm
-

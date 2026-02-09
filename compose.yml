@@ -3,12 +3,6 @@ services:
     build:
       context: .
       target: release
-      secrets:
-        - mgmart_password
       args:
-        - UV_INDEX_MGMART_USERNAME
         - UID=${UID:-1000}
         - GID=${GID:-1000}
-secrets:
-  mgmart_password:
-    environment: UV_INDEX_MGMART_PASSWORD

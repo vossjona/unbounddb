@@ -1,136 +1,82 @@
-# UnboundDB
+# Pokemon Unbound DB
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](empty)
-[![BitBucket](https://img.shields.io/badge/bitbucket-unbounddb-blue.svg)](empty)
-[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://docs.astral.sh/ruff/)
-[![Pre Commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
+A data tool for [Pokemon Unbound](https://www.pokecommunity.com/threads/pok%C3%A9mon-unbound-completed.382Pokemon) — browse Pokemon stats, plan battle strategies, and find catch locations.
 
----
+## Features
 
-Helps with Unbound
+- **Browse Tables** — View Pokemon stats, moves, learnsets, and more
+- **Battle Analysis** — Analyze any trainer battle with defensive typing rankings, offensive type coverage, physical/special breakdowns, and per-Pokemon recommendations
+- **Pokemon Ranker** — Find the best Pokemon to use against a specific battle, ranked by defensive typing, offensive moves, and stat alignment
+- **Pokemon Locations** — Search where to catch any Pokemon, filtered by your game progress
+- **Game Progress Profiles** — Save your progression and filter everything by what's actually available to you
 
-__Table of contents__
+## Data Sources
 
-1. [Getting Started](#getting-started)
-2. [Developer Guide](#developer-guide) \
-  2.1. [Local setup](#local-setup) \
-  2.2. [Project Structure](#project-structure) \
-  2.3. [GNU Make / Makefile](#makefile) \
-  2.4. [Git Hooks and Pre-Commit](#git-hooks-and-pre-commit) \
-  2.5. [Versioning](#versioning)
+All data is parsed from the [Dynamic Pokemon Expansion](https://github.com/TheRealPokemon/DynamicPokemonExpansion) C source files and community-maintained Pokemon Unbound resources. Pokemon and all related properties belong to their respective owners.
 
-## Getting Started
+## How It Works
 
-To get started with UnboundDB, follow these steps:
+The database is built on-demand from raw source files:
 
-### Step 1: Clone the Repository
-```bash
-git clone empty.git
-cd empty
-```
+1. C source files (`Base_Stats.c`, `Learnsets.c`) are parsed with regex
+2. Data is normalized into Polars DataFrames and written as Parquet files
+3. Parquet files are loaded into a DuckDB database
+4. Streamlit serves the UI with live queries against DuckDB
 
-**TODO**
+On Streamlit Cloud, the database builds automatically on first load (~30 seconds). Locally, you can build it manually or let the app auto-build.
 
-> For detailed instructions on setting up the development environment, refer to the [Developer Guide](#developer-guide).
+## Local Development
 
-## Developer Guide
+### Prerequisites
 
-### Local setup
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/) package manager
+- [GNU Make](https://www.gnu.org/software/make/)
 
-Simply run the make target:
+### Setup
 
 ```bash
+git clone https://github.com/vossjona/unbounddb.git
+cd unbounddb
 make setup
 ```
 
-This will install the Python dependencies as well as installing any git hooks 
-defined within the `.pre-commit-config.yaml` file.
+### Fetch Data & Build Database
 
-> Under the hood, `make setup` will run:
->	```bash
->	uv sync --all-groups
->	uv run pre-commit install --install-hooks
->	```
-
-> **Hint:** It is also possible to configure a Docker remote interpreter using the dev Docker image. This is especially
-> useful when the OS is not compatible (e.g. Windows) or the project defines non-Python dependencies.
-> For further information see https://www.jetbrains.com/help/pycharm/using-docker-as-a-remote-interpreter.html or
-> https://www.jetbrains.com/help/pycharm/using-docker-compose-as-a-remote-interpreter.html.
-
-### Project Structure
-
-Some notes about the folder and file structure within this project:
-
-```
-unbounddb
-│─── README.md  # this README
-│─── Makefile  # contains shortcuts for certain development scripts
-│─── Dockerfile  # for defining Docker images
-│─── compose.yml  # for building Docker images and running Docker containers (for dev purposes)
-│─── .dockerignore  # exclude files and directories to increase Docker build performance
-│─── .gitignore  # contains file and folder patterns which should be excluded from git
-│─── .gitattributes  # tells git how to handle different file types—for example, managing line endings, diffs, and merge behavior
-│─── .editorconfig  # contains file dependent style settings
-│─── .hadolint.yaml  # Dockerfile linting configuration (to be used with `hadolint ./Dockerfile`)
-│─── .env  # contains settings exported as environment variables (will be git ignored by default)
-│─── .env.example  # contains example settings (environment variables)
-│─── .pre-commit-config.yaml  # contains git hook configs
-│─── .bumpversion.toml  # should be used for bumping the project version
-│─── AGENTS.md  # contains description of this project to be used by AI coding assistants
-│─── pyproject.toml  # contains project metadata & dependencies as well as settings for some dev tools
-│─── ruff.toml  # contains settings for linting and formatting
-│─── unbounddb  # contains the actual Python source code
-│   │─── __init__.py
-│   │─── logs.py  # contains Python logging related logic
-│   └─── settings.py  # contains settings for the project
-│─── tests  # stores all test related files & folders
-│   │─── resources  # contains any resource needed for running tests
-│   └─── unittests  # contains pytest based unittests for this project 
-│       └─── conftest.py  # provides the option to share fixtures across the whole unittests directory  
-└─── configs  # contains configuration files
-    └─── logging.yml  # configuration file for Python logging
+```bash
+uv run unbounddb fetch --github --verbose
+uv run unbounddb build --github --verbose
 ```
 
-> Note: This directory tree does not contain all files and folders but the most important ones.
+### Run the App
 
-### Makefile
+```bash
+uv run streamlit run streamlit_app.py
+```
 
-The Makefile in this project allows you to run certain development script via corresponding targets.
-To get some insight about what targets/commands are currently supported simply run: `make help`
-or just `make`.
+Or via the CLI:
 
-> Ensure beforehand that [Make](https://www.gnu.org/software/make/) is installed.
+```bash
+uv run unbounddb ui
+```
 
-### Git Hooks and Pre-Commit
+## Quality Checks
 
-[Git hooks](https://git-scm.com/book/en/v2/Customizing-Git-Git-Hooks) is a built-in feature of git and allows executing
-certain scripts at certain events e.g. on commit, merge or push. [Pre-Commit](https://pre-commit.com/) is a Python based
-tool for easy registering of such scripts/hooks via the usage of some *.pre-commit-config.yaml* file.
+```bash
+make format       # Ruff formatting
+make lint         # Ruff linting
+make typing       # MyPy type checking
+make unittests    # Pytest unit tests
+```
 
-After having installed the pre-commit hooks anytime you run for example `git commit` all the hooks, which are defined
-within the *.pre-commit-config.yaml* for the associated stage, will be triggered. You can also run certain hooks 
-isolated via `pre-commit run <hook_id>`, for example `pre-commit run mypy`.
+## Tech Stack
 
-You can verify the existence of your git hooks by checking the files within the *.git/hooks* folder.
+- **Data**: [Polars](https://pola.rs/) + [DuckDB](https://duckdb.org/) + [PyArrow](https://arrow.apache.org/docs/python/)
+- **UI**: [Streamlit](https://streamlit.io/)
+- **Parsing**: Regex-based C struct parser
+- **Config**: [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)
+- **CLI**: [Typer](https://typer.tiangolo.com/)
 
-For further information check the [official pre-commit documentation](https://pre-commit.com/).
+## License
 
-> Important: The hooks only apply to  those files, which are within the staging area, so for example you create a commit
-> with only none python files ruff, mypy etc. will not get triggered. If you want to execute those hooks or
-> (some specific) for all files run `pre-commit run [<hook_id>] -a`
-
-> Note: If you want to commit/push your files without running all the configured hooks just run the git command with the
-> *--no-verify* flag. For example `git commit -m "my descriptive message" --no-verify`.
-
-### Versioning
-
-This project uses [bump-my-version](https://callowayproject.github.io/bump-my-version/) for versioning.
-Check `bump-my-version show-bump` for an overview about the version bump workflow.
-
-#### Release a new version
-
-Run `bump-my-version bump release` or the convenient make target `make release` to bump version to next release.
-
-#### Bump to next development version
-
-Run `bump-my-version bump <major|minor|patch|build>` to select the next development version.
+This is a fan project for personal use. Pokemon and all related properties are trademarks of their respective owners.

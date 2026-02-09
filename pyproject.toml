@@ -3,14 +3,14 @@ requires = ["uv_build>=0.9.2,<0.10.0"]
 build-backend = "uv_build"
 
 [project]
-name = "com-mgmtp-unbounddb"
+name = "unbounddb"
 version = "0.1.0"
 description = "Helps with Unbound"
 authors = [
-  {name = "Jonas Voss", email = "jonas.voss@mgm-tp.com"}
+  {name = "Jonas"}
 ]
 maintainers = [
-  {name = "Jonas Voss", email = "jonas.voss@mgm-tp.com"}
+  {name = "Jonas"}
 ]
 readme = "README.md"
 classifiers = [
@@ -68,13 +68,9 @@ doc = [
 
 
 [project.urls]
-Repository = "empty"
+Repository = "https://github.com/vossjona/unbounddb"
 
 
-
-[[tool.uv.index]]
-name = "mgmart"
-url = "https://artifacts.mgm-tp.com/artifactory/api/pypi/pypi-repos/simple"
 
 [tool.uv.build-backend]
 module-name = "unbounddb"

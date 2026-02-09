@@ -69,12 +69,44 @@ st.set_page_config(
     layout="wide",
 )
 
+
+def _check_password() -> bool:
+    """Verify user password via st.secrets. Skips if no secret configured."""
+    if "password" not in st.secrets:
+        return True
+    if st.session_state.get("authenticated"):
+        return True
+    password = st.text_input("Password", type="password", key="password_input")
+    if password:
+        if password == st.secrets["password"]:
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("Incorrect password.")
+    return False
+
+
+if not _check_password():
+    st.stop()
+
 st.title("Pokemon Unbound Database")
 
-# Check if database exists
+# Build database on first load if it doesn't exist
 if not settings.db_path.exists():
-    st.error(f"Database not found at `{settings.db_path}`. Please run `unbounddb fetch` and `unbounddb build` first.")
-    st.stop()
+    st.info("Building database from source files. This may take a moment on first load...")
+    build_log = st.empty()
+    try:
+        from unbounddb.build.pipeline import run_github_build_pipeline
+
+        def _log_build_progress(msg: str) -> None:
+            build_log.text(msg)
+
+        run_github_build_pipeline(verbose_callback=_log_build_progress)
+        build_log.empty()
+        st.rerun()
+    except Exception as e:
+        st.error(f"Failed to build database: {e}")
+        st.stop()
 
 # Load available options
 try:

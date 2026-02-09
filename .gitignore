@@ -68,3 +68,6 @@ odc-report
 data/raw/exports/
 data/curated/
 data/db/
+
+# Streamlit secrets (contains passwords, never commit)
+.streamlit/secrets.toml
