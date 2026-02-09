@@ -11,3 +11,8 @@ sources:
     url: "https://docs.google.com/spreadsheets/d/1PyGm-yrit5Ow6cns2tBA9VEMwLVMzn3YhDRipABjLUM/export?format=csv&gid=897380238"
     description: "Wild Pokemon encounter locations"
     parser: "locations"
+
+  tm_locations:
+    url: "https://docs.google.com/spreadsheets/d/1CBydbTlO0FSPTUiamzUceNNt7-YkWSGDq69wwrYXosI/export?format=csv&gid=0"
+    description: "TM locations and acquisition details"
+    parser: "tm_locations"

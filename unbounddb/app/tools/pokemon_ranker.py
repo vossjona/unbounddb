@@ -47,11 +47,21 @@ def get_all_pokemon_with_stats(db_path: Path | None = None) -> pl.DataFrame:
     return result
 
 
-def get_all_learnable_offensive_moves(db_path: Path | None = None) -> pl.DataFrame:
+def get_all_learnable_offensive_moves(
+    db_path: Path | None = None,
+    available_tm_keys: set[str] | None = None,
+) -> pl.DataFrame:
     """Batch query all offensive moves that Pokemon can learn.
+
+    Excludes tutor moves since they have no structured location data
+    for availability checking. Optionally filters TM moves to only
+    include those whose TMs are obtainable at current game progress.
 
     Args:
         db_path: Optional path to database.
+        available_tm_keys: Optional set of move keys for obtainable TMs.
+            If provided, TM moves not in this set are excluded.
+            If None, all TM moves are included.
 
     Returns:
         DataFrame with columns:
@@ -66,11 +76,16 @@ def get_all_learnable_offensive_moves(db_path: Path | None = None) -> pl.DataFra
         JOIN moves m ON pm.move_key = m.move_key
         WHERE m.power > 0
           AND m.category IN ('Physical', 'Special')
+          AND pm.learn_method != 'tutor'
         ORDER BY pm.pokemon_key, m.power DESC
     """
 
     result = conn.execute(query).pl()
     conn.close()
+
+    # Filter out TM moves that aren't obtainable at current progression
+    if available_tm_keys is not None and not result.is_empty():
+        result = result.filter((pl.col("learn_method") != "tm") | pl.col("move_key").is_in(available_tm_keys))
 
     return result
 
@@ -459,6 +474,7 @@ def rank_pokemon_for_battle(
     db_path: Path | None = None,
     top_n: int = 50,
     available_pokemon: set[str] | None = None,
+    available_tm_keys: set[str] | None = None,
 ) -> pl.DataFrame:
     """Rank all Pokemon for a battle matchup using composite scoring.
 
@@ -471,6 +487,8 @@ def rank_pokemon_for_battle(
         top_n: Number of top results to return (0 for all).
         available_pokemon: Optional set of Pokemon names to filter by. If provided,
             only Pokemon in this set will be included in the rankings.
+        available_tm_keys: Optional set of move keys for obtainable TMs.
+            If provided, TM moves not in this set are excluded from scoring.
 
     Returns:
         DataFrame with columns:
@@ -490,7 +508,7 @@ def rank_pokemon_for_battle(
 
     # Get all Pokemon and moves
     all_pokemon = get_all_pokemon_with_stats(db_path)
-    all_moves = get_all_learnable_offensive_moves(db_path)
+    all_moves = get_all_learnable_offensive_moves(db_path, available_tm_keys=available_tm_keys)
 
     # Filter by available Pokemon if specified
     if available_pokemon is not None:
@@ -630,6 +648,7 @@ def get_pokemon_moves_detail(
     pokemon_key: str,
     battle_id: int,
     db_path: Path | None = None,
+    available_tm_keys: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Get detailed good moves for a specific Pokemon against a battle.
 
@@ -637,6 +656,7 @@ def get_pokemon_moves_detail(
         pokemon_key: The Pokemon's key.
         battle_id: ID of the battle to analyze.
         db_path: Optional path to database.
+        available_tm_keys: Optional set of move keys for obtainable TMs.
 
     Returns:
         List of dicts with move details:
@@ -659,7 +679,7 @@ def get_pokemon_moves_detail(
     battle_pokemon = get_battle_pokemon_types(battle_id, db_path)
 
     # Get Pokemon's learnable moves
-    all_moves = get_all_learnable_offensive_moves(db_path)
+    all_moves = get_all_learnable_offensive_moves(db_path, available_tm_keys=available_tm_keys)
     pokemon_moves = all_moves.filter(pl.col("pokemon_key") == pokemon_key)
 
     if pokemon_moves.is_empty():
@@ -681,6 +701,7 @@ def get_coverage_detail(
     pokemon_key: str,
     battle_id: int,
     db_path: Path | None = None,
+    available_tm_keys: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Get detailed coverage breakdown for a Pokemon against battle's team.
 
@@ -688,6 +709,7 @@ def get_coverage_detail(
         pokemon_key: The Pokemon's key.
         battle_id: ID of the battle to analyze.
         db_path: Optional path to database.
+        available_tm_keys: Optional set of move keys for obtainable TMs.
 
     Returns:
         List of dicts with coverage details per battle Pokemon:
@@ -700,7 +722,7 @@ def get_coverage_detail(
         return []
 
     # Get Pokemon's learnable moves
-    all_moves = get_all_learnable_offensive_moves(db_path)
+    all_moves = get_all_learnable_offensive_moves(db_path, available_tm_keys=available_tm_keys)
     pokemon_moves = all_moves.filter(pl.col("pokemon_key") == pokemon_key)
 
     if pokemon_moves.is_empty():

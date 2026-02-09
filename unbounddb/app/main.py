@@ -32,6 +32,7 @@ from unbounddb.app.queries import (
     get_table_preview,
     search_pokemon_locations,
 )
+from unbounddb.app.tm_availability import get_available_tm_move_keys
 from unbounddb.app.tools.defensive_suggester import (
     analyze_battle_defense,
     get_battle_move_types,
@@ -692,12 +693,18 @@ with tab2:
                         key="ranker_show_all",
                     )
 
-                    # Get available Pokemon based on game progress
+                    # Get available Pokemon and TMs based on game progress
                     available_pokemon = get_available_pokemon_set(global_filter_config)
+                    available_tm_keys = get_available_tm_move_keys(global_filter_config)
 
-                    # Get rankings - filter by available Pokemon
+                    # Get rankings - filter by available Pokemon and TMs
                     limit = 0 if show_all_pokemon else 50
-                    rankings_df = rank_pokemon_for_battle(battle_id, top_n=limit, available_pokemon=available_pokemon)
+                    rankings_df = rank_pokemon_for_battle(
+                        battle_id,
+                        top_n=limit,
+                        available_pokemon=available_pokemon,
+                        available_tm_keys=available_tm_keys,
+                    )
 
                     if rankings_df.is_empty():
                         st.warning("Could not rank Pokemon. Make sure move data is available.")
@@ -777,7 +784,9 @@ with tab2:
                                     st.write(f"Weaknesses: {row['weaknesses']}")
 
                                 # Coverage breakdown
-                                coverage_detail = get_coverage_detail(row["pokemon_key"], battle_id)
+                                coverage_detail = get_coverage_detail(
+                                    row["pokemon_key"], battle_id, available_tm_keys=available_tm_keys
+                                )
                                 if coverage_detail:
                                     covered_count = sum(1 for c in coverage_detail if c["is_covered"])
                                     total_count = len(coverage_detail)
@@ -797,7 +806,9 @@ with tab2:
                                             st.write(f"- ✗ {cov['pokemon_key']} ({type_str})")
 
                                 # Recommended moves detail
-                                good_moves = get_pokemon_moves_detail(row["pokemon_key"], battle_id)
+                                good_moves = get_pokemon_moves_detail(
+                                    row["pokemon_key"], battle_id, available_tm_keys=available_tm_keys
+                                )
                                 if good_moves:
                                     st.markdown("**Recommended Moves:**")
 

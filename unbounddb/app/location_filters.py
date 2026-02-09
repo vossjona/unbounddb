@@ -18,6 +18,7 @@ class LocationFilterConfig:
         post_game: If False, exclude Post-game locations and Beat the League requirements.
         accessible_locations: If not empty, only keep those location_names.
         level_cap: If set, exclude evolutions requiring level > this value.
+        available_hms: Set of HM names available at current progression (for TM filtering).
     """
 
     has_surf: bool = True
@@ -27,6 +28,7 @@ class LocationFilterConfig:
     post_game: bool = True
     accessible_locations: list[str] | None = None
     level_cap: int | None = None
+    available_hms: frozenset[str] = frozenset()
 
 
 def apply_location_filters(df: pl.DataFrame, config: LocationFilterConfig | None) -> pl.DataFrame:

@@ -18,6 +18,7 @@ from unbounddb.ingestion.c_parser import (
 from unbounddb.ingestion.egg_moves_parser import parse_egg_moves_file
 from unbounddb.ingestion.evolution_parser import parse_evolutions_file
 from unbounddb.ingestion.locations_parser import parse_all_location_csvs
+from unbounddb.ingestion.tm_locations_parser import parse_tm_locations_csv
 from unbounddb.ingestion.tm_tutor_parser import parse_tm_tutor_directory
 from unbounddb.settings import settings
 
@@ -273,6 +274,26 @@ def _parse_locations(source_dir: Path, curated_dir: Path, log: LogFunc) -> tuple
     return ("locations", parquet_path)
 
 
+def _parse_tm_locations(source_dir: Path, curated_dir: Path, log: LogFunc) -> tuple[str, Path] | None:
+    """Parse tm_locations.csv to tm_locations parquet."""
+    tm_locations_path = source_dir / "tm_locations.csv"
+    if not tm_locations_path.exists():
+        log(f"Warning: tm_locations.csv not found at {tm_locations_path}")
+        return None
+
+    log("Parsing tm_locations.csv...")
+    df = parse_tm_locations_csv(tm_locations_path)
+
+    if len(df) == 0:
+        log("  -> No TM locations found (empty result)")
+        return None
+
+    parquet_path = curated_dir / "tm_locations.parquet"
+    df.write_parquet(parquet_path)
+    log(f"  -> {parquet_path} ({len(df)} rows)")
+    return ("tm_locations", parquet_path)
+
+
 def run_build_pipeline(
     source_dir: Path | None = None,
     curated_dir: Path | None = None,
@@ -426,6 +447,10 @@ def run_github_build_pipeline(
 
     # Parse locations
     if result := _parse_locations(source_dir, curated_dir, log):
+        parquet_files[result[0]] = result[1]
+
+    # Parse TM locations
+    if result := _parse_tm_locations(source_dir, curated_dir, log):
         parquet_files[result[0]] = result[1]
 
     if not parquet_files:

@@ -1,0 +1,121 @@
+ID,NAME,TYPE,PLACE
+001,Focus Punch,fight,Victory Road (Outdoor hedge maze)
+002,Dragon Claw,dragon,Victory Road (Snowy cliffs after using Rock Climb)
+003,Water Pulse,water,Valley Cave (on B1F after using Rock Climb)
+004,Calm Mind,psychic,Fallshore City (Purchase in the marketplace)
+005,Roar,normal,Crystal Peak (Large room on 1F after using Surf)
+006,Toxic,poison,Cootes Bog (East side of the bog after using Surf)
+007,Hail,ice,Icy Hole (Help Clown escape; requires Rock Climb[Bellin Town])
+008,Bulk Up,fight,Fallshore City (Purchase in the marketplace)
+009,Bullet Seed,grass,Route 5 (east side of the route after using Cut)
+010,Hidden Power,normal,Fallshore City (Received from the Hidden Power Man in his home)
+011,Sunny Day,grass,Route 16 (Received from Clown after showing Solrock or Solgaleo)
+012,Taunt,dark,Seaport City (Behind Pokemart)
+013,Ice Beam,ice,Icicle Cave (on 3F after beating a pair of Ace Trainers[Surf Required])
+014,Blizzard,ice,Icicle Cave (on B1F after pushing a boulder down a hole[Strengh Required])
+015,Hyper Beam,normal,Dehara Dept
+016,Light Screen,psychic,Dehara City Game Corner (Purchase for 2000 coins)
+017,Protect,normal,Fallshore City (purchase in marketplace)
+018,Rain Dance,water,Auburn Waterway (Find the Clown hiding)
+019,Giga Drain,grass,Redwood Forest (near the centre of group of trees)
+020,Safeguard,normal,Fallshore City (Purchase in the marketplace)
+021,Frustration,normal,Tomb of Borrius (after navigating the hell cracked floor)
+022,Solar Beam,grass,Magnolia Fields (Under a tree on the East Side)
+023,Iron Tail,steel,Route 14
+024,Thunderbolt,electr,Thundercap Mountain(by Epidimh Town entrance after using surf)
+025,Thunder,electr,Thundercap Mountain
+026,Earthquake,ground,"Great Desert (above Tomb of Borrius, after using Rock Climb)"
+027,Return,normal,"Blizzard City (Reward for completing the quest ""Bad Babysitter"")"
+028,Dig,ground,"Lost Tunnel (Reward for completing the quest ""Island saviour"" [Auburn Waterway])"
+029,Psychic,psychic,Fallshore City (Above the KBT Express Way after using Waterfall)
+030,Shadow Ball,ghost,Route 9 center of the lake
+031,Brick Break,fight,Ruins of Void (on B3F after using Rock Smash)
+032,Double Team,normal,Dehara City (purchase for 2000 coins [Game Corner])
+033,Reflect,psychic,Dehara City (purchase for 2000 coins [Game Corner])
+034,Shock Wave,electr,Blizzard City (purchase at the Pokemart)
+035,Flamethrower,fire,"Cinder Volcano (after crossing over the Magma, [needs Fire type in the party])"
+036,Sludge Bomb,poison,Antisis Sewers (south room after using Waterfall)
+037,Sandstorm,rock,Great Desert (from Clown after breaking all rocks in the west section of the desert)
+038,Fire Blast,fire,Cinder Volcano (on 3F after using Rock Climb)
+039,Rock Tomb,rock,Blizzard City (Purchase from the pokemart)
+040,Aerial Ace,flying,Blizzard City (after beating the Gym Leader)
+041,Torment,dark,Shadow Base (on B2F behind a locked door
+042,Facade,normal,Fallshore City (after beating the Gym Leader)
+043,Secret Power,normal,Dehara City (purchase for 3000 coins [Game Corner]
+044,Rest,psychic,Valley Cave (on B1F after using Surf)
+045,Attract,normal,Route 3 (on a beach next to a fisherman after using Surf)
+046,Thief,dark,Crater Town (after beating the Gym Leader)
+047,Steel Wing,steel,Route 12 (South of the Beauty)
+048,Skill Swap,psychic,Ruins of Void (on the cliffs after both using the ADM and Rock Climb)
+049,Leech Fang,bug,Redwood Village (after beating the Gym Leader)
+050,Overheat,fire,Crystal Peak (on 1F in the left room after hiding blue & red crystals)
+051,Roost,flying,Route 13 (on some rocky ground after using Rock Climb)
+052,Focus Blast,fight,Dehara Dept
+053,Energy Ball,grass,Seaport City (purchase in the marketplace)
+054,False Swipe,normal,Route 10 (next to a fence above the Camper)
+055,Brine,water,Blizzard City (purchased in the mart)
+056,Hone Claws,dark,"Icicle Cave (after completing the quest ""The Food Thief"")"
+057,Charge Beam,electr,Seaport City (purchase in the marketplace)
+058,Endure,normal,Dehara City (purchase for 1000 coins [Game Corner])
+059,Dragon Pulse,dragon,Route 18 (north of the Pokemon Center after using Cut)
+060,Drain Punch,fight,Antisis City (after beating the Gym Leader)
+061,Will-o-Wisp,fire,Dehara City (purchase for 40000 coins [Game Corner])
+062,Silver Wind,bug,"Flower Paradise (reward for the quest ""Honey Gather"")"
+063,Venoshock,poison,Blizzard City (purchase in the mart)
+064,Explosion,normal,Dehara Dept
+065,Shadow Claw,ghost,Route 11 (on the cliffs after using Rock Climb)
+066,Payback,dark,Route 2 (on the east side of Challenge Road after using Rock Smash)
+067,Recycle,normal,Antisis Sewers (in the north room)
+068,Giga Impact,normal,Dehara Dept
+069,Rock Polish,rock,Icicle Cave (on B1F after sliding around the ice and using Rock Smash)
+070,Flash,normal,Crater Town (as a gift in the mart)
+071,Stone Edge,rock,Crystal Peak (on 1F in the right room after hiding Yellow crystals)
+072,Avalanche,ice,Forst Mountain ( on 2F after going up on alternate ladder)
+073,Thunder Wave,electr,Thundercap Mt
+074,Gyro Ball,steel,Route 6 (After surfing to rocky ground and using rock climb)
+075,Swords Dance,normal,Dehara City (purchase for 4000 coins [Game Corner]
+076,Stealth Rock,rock,Cinder Volcano (on B1F in the Shadow's storage area after using both Strength & Rock Smash)
+077,Flame Charge,fire,Route 9 (underneath a treetop after using Surf in the eastern hidden pathway)
+078,Low Sweep,fight,Blizzard City (purchase in the mart)
+079,Dark Pulse,dark,Frost Mountain (on 1F after using Rock Climb near the entrance)
+080,Rock Slide,rock,Frost Mountain ( on 2F after using both Strength and Rock Climb)
+081,X-Scissor,bug,Vivill Woods (near mushrooms hiding Paras after using Surf)
+082,Sleep Talk,normal,Battle Tower (purchased for 32 BP)
+083,Scald,water,Route 14 (after using Rock Climb above the KBT Expressway)
+084,Poison Jab,poison,Seaport City (purchase in the marketplace)
+085,Dream Eater,psychic,Tarmigan Town (received in the Dream Reasearch Lab)
+086,Grass Knot,grass,Dresco Town (after beating the Gym Leader)
+087,Swagger,normal,Dehara City (purchase for 2000 coins [Game Corner])
+088,Pluck,flying,Blizzard City (purchased from the mart)
+089,U-Turn ,bug,Auburn Waterway (in the surf area after using both surf and cut)
+090,Substitute,normal,Dehara City (purchase for 3000 coins [Game Corner])
+091,Flash Cannon,steel,Thundercap Mountain
+092,Volt Switch,electr,Dehara City (after beating the gym leader)
+093,Dragon Tail,dragon,Rift Cave (on 2F after wandering around for a while)
+094,Incinerate,fire,Cinder Volcano (on 3F near the Battle Girl)
+095,Struggle Bug,bug,Route 9 (near the ocean)
+096,Bulldoze,ground,Blizzard City (purchase from the mart)
+097,Frost Breath,ice,Bellin Town (after using Rock Climb)
+098,Work Up,normal,"Crater Town (reward for completing the quest ""The Black Emboar"")"
+099,Wild Charge,electr,Seaport City (in the warehouse where a scientist was experimenting on an Electivire)
+100,Infestation,bug,Grim Woods (near a bug catcher on the north side of the forest)
+101,Power-up Hit/Punch,fight,Valley Cave (after using Rock Climb and destroying the Tablet)
+102,Dazzle/Dazzling Gleam,fairy,Redwood Village (underneath a treetop)
+103,Sludge Wave,poison,Battle Tower (purchase for 48 BP)
+104,Psyshock,psychic,Route 17 (after using Rock Climb on the eastern beach)
+105,Brutal Swing,dark,Dresco Town (after using Surf)
+106,Smart Strike,steel,"Route 10 (reward for completing the quest ""The Terror Granbull"")"
+107,Acrobatics,flying,Antisis City (reward for showing a pokemon with the move Eerie Impulse)
+108,Snarl,dark,Route 7 (above a patch of grass near Frost Mountain)
+109,Defog,flying,Antisis Sewers (Given by the Clown in for showing them a Pokemon with Sweet Scent)
+110,Drain Kiss,fairy,Battle Tower (purchase for 24 BP)
+111,Smack Down,rock,"Gurun Town (reward for completing the quest ""as Hard as They Come"")"
+112,Round,normal,Route 4 (after using Cut outside the western Grim Woods exit)
+113,Echoed Voice,normal,Dehara City (purchase for 2000 coins [Game corner])
+114,Natural Gift,grass,Seaport City (gift in the marketplace)
+115,Quash,dark,Battle Tower (purchase for 24 BP
+116,Trick Room,psychic,Battle Tower (purchase for 48 BP)
+117,Fling,dark,Route 16 (after resurfacing with the ADM)
+118,Aurora Veil,ice,Blizzard City (gift in one of the southern houses)
+119,Sky Drop,flying,Route 4 (after using Waterfall)
+120,Nature Power,grass,"Cootes Bog (reward for completing the quest ""Protector of the Swamp'')"

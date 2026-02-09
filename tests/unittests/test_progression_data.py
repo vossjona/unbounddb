@@ -281,3 +281,21 @@ class TestComputeFilterConfig:
 
         assert config.accessible_locations is None
         assert config.level_cap is None
+
+    def test_available_hms_empty_at_start(self, sample_entries: list[ProgressionEntry]) -> None:
+        """Step 0 has no HMs available."""
+        config = compute_filter_config(sample_entries, step=0, difficulty=None)
+
+        assert config.available_hms == frozenset()
+
+    def test_available_hms_accumulates(self, sample_entries: list[ProgressionEntry]) -> None:
+        """HMs accumulate through progression steps."""
+        config = compute_filter_config(sample_entries, step=3, difficulty=None)
+
+        assert config.available_hms == frozenset({"Surf", "Rock Smash"})
+
+    def test_available_hms_includes_all(self, sample_entries: list[ProgressionEntry]) -> None:
+        """All HMs accumulated by final step."""
+        config = compute_filter_config(sample_entries, step=4, difficulty=None)
+
+        assert config.available_hms == frozenset({"Surf", "Rock Smash", "Dive"})
