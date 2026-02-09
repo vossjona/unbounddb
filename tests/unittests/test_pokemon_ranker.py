@@ -1,5 +1,5 @@
 # ABOUTME: Unit tests for Pokemon ranker scoring functions.
-# ABOUTME: Tests defense, offense, stat, BST scoring, and coverage logic for trainer matchups.
+# ABOUTME: Tests defense, offense, stat, BST scoring, and coverage logic for battle matchups.
 
 from unittest.mock import patch
 
@@ -11,7 +11,7 @@ from unbounddb.app.tools.pokemon_ranker import (
     calculate_defense_score,
     calculate_offense_score,
     calculate_stat_score,
-    rank_pokemon_for_trainer,
+    rank_pokemon_for_battle,
 )
 
 
@@ -19,36 +19,36 @@ class TestDefenseScoring:
     """Tests for calculate_defense_score function."""
 
     def test_immune_type_scores_high(self) -> None:
-        """Pokemon with immunity to trainer's moves scores high."""
+        """Pokemon with immunity to battle's moves scores high."""
         # Ground type is immune to Electric
         score, immunities, _resistances, weaknesses = calculate_defense_score(
             type1="Ground",
             type2=None,
-            trainer_move_types=["Electric"],
+            battle_move_types=["Electric"],
         )
         assert score > 50  # Should be above average
         assert "Electric" in immunities
         assert len(weaknesses) == 0
 
     def test_weak_type_scores_low(self) -> None:
-        """Pokemon weak to trainer's moves scores low."""
+        """Pokemon weak to battle's moves scores low."""
         # Grass is weak to Fire
         score, immunities, _resistances, weaknesses = calculate_defense_score(
             type1="Grass",
             type2=None,
-            trainer_move_types=["Fire"],
+            battle_move_types=["Fire"],
         )
         assert score < 60  # Should be below neutral (one weakness)
         assert "Fire" in weaknesses
         assert len(immunities) == 0
 
     def test_resistance_scores_medium(self) -> None:
-        """Pokemon resisting trainer's moves scores moderately."""
+        """Pokemon resisting battle's moves scores moderately."""
         # Fire resists Fire
         score, _immunities, resistances, _weaknesses = calculate_defense_score(
             type1="Fire",
             type2=None,
-            trainer_move_types=["Fire"],
+            battle_move_types=["Fire"],
         )
         assert 40 < score < 80  # Should be moderate
         assert "Fire" in resistances
@@ -59,7 +59,7 @@ class TestDefenseScoring:
         score_weak, _, _, _ = calculate_defense_score(
             type1="Ice",
             type2=None,
-            trainer_move_types=["Fire", "Fighting", "Rock", "Steel"],
+            battle_move_types=["Fire", "Fighting", "Rock", "Steel"],
         )
         assert 0 <= score_weak <= 100
 
@@ -67,16 +67,16 @@ class TestDefenseScoring:
         score_strong, _, _, _ = calculate_defense_score(
             type1="Steel",
             type2="Flying",
-            trainer_move_types=["Normal", "Poison", "Ground"],
+            battle_move_types=["Normal", "Poison", "Ground"],
         )
         assert 0 <= score_strong <= 100
 
     def test_empty_move_types_returns_zero(self) -> None:
-        """Empty trainer move types returns zero score."""
+        """Empty battle move types returns zero score."""
         score, immunities, resistances, weaknesses = calculate_defense_score(
             type1="Normal",
             type2=None,
-            trainer_move_types=[],
+            battle_move_types=[],
         )
         assert score == 0.0
         assert immunities == []
@@ -89,7 +89,7 @@ class TestDefenseScoring:
         _score, immunities, _resistances, _weaknesses = calculate_defense_score(
             type1="Ghost",
             type2="Dark",
-            trainer_move_types=["Normal", "Fighting", "Psychic"],
+            battle_move_types=["Normal", "Fighting", "Psychic"],
         )
         assert "Normal" in immunities
         assert "Fighting" in immunities
@@ -102,7 +102,7 @@ class TestDefenseScoring:
         score, _, _, weaknesses = calculate_defense_score(
             type1="Rock",
             type2="Ice",
-            trainer_move_types=["Fighting", "Steel", "Water", "Ground"],
+            battle_move_types=["Fighting", "Steel", "Water", "Ground"],
         )
         assert len(weaknesses) >= 3
         assert score < 40  # Should be well below neutral
@@ -612,7 +612,7 @@ class TestEdgeCases:
         _score, _immunities, _resistances, weaknesses = calculate_defense_score(
             type1="Rock",
             type2="Ice",
-            trainer_move_types=["Fighting"],
+            battle_move_types=["Fighting"],
         )
         # Fighting should appear once in weaknesses
         assert weaknesses.count("Fighting") == 1
@@ -679,7 +679,7 @@ class TestScoreCapping:
         score_high, _, _, _ = calculate_defense_score(
             type1="Ghost",
             type2="Dark",
-            trainer_move_types=["Normal", "Fighting", "Psychic", "Poison"],
+            battle_move_types=["Normal", "Fighting", "Psychic", "Poison"],
         )
         assert 0 <= score_high <= 100
 
@@ -687,7 +687,7 @@ class TestScoreCapping:
         score_low, _, _, _ = calculate_defense_score(
             type1="Ice",
             type2=None,
-            trainer_move_types=["Fire", "Fighting", "Rock", "Steel"],
+            battle_move_types=["Fire", "Fighting", "Rock", "Steel"],
         )
         assert 0 <= score_low <= 100
 
@@ -746,7 +746,7 @@ class TestCoverage:
     """Tests for calculate_coverage function."""
 
     def test_super_effective_move_covers_pokemon(self) -> None:
-        """Ground move covers Electric-type trainer Pokemon."""
+        """Ground move covers Electric-type battle Pokemon."""
         moves_df = pl.DataFrame(
             {
                 "pokemon_key": ["test"],
@@ -759,11 +759,11 @@ class TestCoverage:
                 "level": [36],
             }
         )
-        trainer_pokemon = [
+        battle_pokemon = [
             {"pokemon_key": "pikachu", "type1": "Electric", "type2": None, "slot": 1},
         ]
 
-        covered_keys, count = calculate_coverage(moves_df, trainer_pokemon)
+        covered_keys, count = calculate_coverage(moves_df, battle_pokemon)
 
         assert "pikachu" in covered_keys
         assert count == 1
@@ -782,12 +782,12 @@ class TestCoverage:
                 "level": [1],
             }
         )
-        trainer_pokemon = [
+        battle_pokemon = [
             {"pokemon_key": "pikachu", "type1": "Electric", "type2": None, "slot": 1},
             {"pokemon_key": "bulbasaur", "type1": "Grass", "type2": "Poison", "slot": 2},
         ]
 
-        covered_keys, count = calculate_coverage(moves_df, trainer_pokemon)
+        covered_keys, count = calculate_coverage(moves_df, battle_pokemon)
 
         assert covered_keys == []
         assert count == 0
@@ -806,13 +806,13 @@ class TestCoverage:
                 "level": [36, 0],
             }
         )
-        trainer_pokemon = [
+        battle_pokemon = [
             {"pokemon_key": "pikachu", "type1": "Electric", "type2": None, "slot": 1},  # Covered by Ground
             {"pokemon_key": "dragonite", "type1": "Dragon", "type2": "Flying", "slot": 2},  # Covered by Ice (4x)
             {"pokemon_key": "snorlax", "type1": "Normal", "type2": None, "slot": 3},  # Not covered
         ]
 
-        covered_keys, count = calculate_coverage(moves_df, trainer_pokemon)
+        covered_keys, count = calculate_coverage(moves_df, battle_pokemon)
 
         assert count == 2
         assert "pikachu" in covered_keys
@@ -834,11 +834,11 @@ class TestCoverage:
             }
         )
         # Dragon/Flying is 4x weak to Ice
-        trainer_pokemon = [
+        battle_pokemon = [
             {"pokemon_key": "dragonite", "type1": "Dragon", "type2": "Flying", "slot": 1},
         ]
 
-        covered_keys, count = calculate_coverage(moves_df, trainer_pokemon)
+        covered_keys, count = calculate_coverage(moves_df, battle_pokemon)
 
         assert "dragonite" in covered_keys
         assert count == 1
@@ -857,17 +857,17 @@ class TestCoverage:
                 "level": pl.Int64,
             }
         )
-        trainer_pokemon = [
+        battle_pokemon = [
             {"pokemon_key": "pikachu", "type1": "Electric", "type2": None, "slot": 1},
         ]
 
-        covered_keys, count = calculate_coverage(empty_df, trainer_pokemon)
+        covered_keys, count = calculate_coverage(empty_df, battle_pokemon)
 
         assert covered_keys == []
         assert count == 0
 
-    def test_empty_trainer_team_no_coverage(self) -> None:
-        """Empty trainer team means no coverage."""
+    def test_empty_battle_team_no_coverage(self) -> None:
+        """Empty battle team means no coverage."""
         moves_df = pl.DataFrame(
             {
                 "pokemon_key": ["test"],
@@ -888,7 +888,7 @@ class TestCoverage:
 
 
 class TestRankPokemonFiltersByAvailableSet:
-    """Tests for the available_pokemon filter in rank_pokemon_for_trainer."""
+    """Tests for the available_pokemon filter in rank_pokemon_for_battle."""
 
     def test_available_pokemon_filters_results(self) -> None:
         """When available_pokemon is provided, only those Pokemon should appear."""
@@ -922,7 +922,7 @@ class TestRankPokemonFiltersByAvailableSet:
             }
         )
 
-        # Mock trainer analysis functions
+        # Mock battle analysis functions
         mock_team = [
             {"pokemon_key": "squirtle", "type1": "Water", "type2": None, "slot": 1},
         ]
@@ -937,7 +937,7 @@ class TestRankPokemonFiltersByAvailableSet:
                 return_value=mock_moves,
             ),
             patch(
-                "unbounddb.app.tools.pokemon_ranker.get_trainer_move_types",
+                "unbounddb.app.tools.pokemon_ranker.get_battle_move_types",
                 return_value=["Water"],
             ),
             patch(
@@ -945,21 +945,21 @@ class TestRankPokemonFiltersByAvailableSet:
                 return_value=[{"type": "Electric", "score": 20, "rank": 1}],
             ),
             patch(
-                "unbounddb.app.tools.pokemon_ranker.analyze_trainer_defensive_profile",
+                "unbounddb.app.tools.pokemon_ranker.analyze_battle_defensive_profile",
                 return_value={"recommendation": "Use Special moves"},
             ),
             patch(
-                "unbounddb.app.tools.pokemon_ranker.get_trainer_pokemon_types",
+                "unbounddb.app.tools.pokemon_ranker.get_battle_pokemon_types",
                 return_value=mock_team,
             ),
         ):
             # Test without filter - should get all 3 Pokemon
-            result_all = rank_pokemon_for_trainer(trainer_id=1, top_n=0)
+            result_all = rank_pokemon_for_battle(battle_id=1, top_n=0)
             assert len(result_all) == 3
 
             # Test with filter - should only get Pikachu and Charmander
             available = {"Pikachu", "Charmander"}
-            result_filtered = rank_pokemon_for_trainer(trainer_id=1, top_n=0, available_pokemon=available)
+            result_filtered = rank_pokemon_for_battle(battle_id=1, top_n=0, available_pokemon=available)
             assert len(result_filtered) == 2
             names = set(result_filtered["name"].to_list())
             assert names == {"Pikachu", "Charmander"}
@@ -992,7 +992,7 @@ class TestRankPokemonFiltersByAvailableSet:
                 return_value=pl.DataFrame(),
             ),
             patch(
-                "unbounddb.app.tools.pokemon_ranker.get_trainer_move_types",
+                "unbounddb.app.tools.pokemon_ranker.get_battle_move_types",
                 return_value=[],
             ),
             patch(
@@ -1000,14 +1000,14 @@ class TestRankPokemonFiltersByAvailableSet:
                 return_value=[],
             ),
             patch(
-                "unbounddb.app.tools.pokemon_ranker.analyze_trainer_defensive_profile",
+                "unbounddb.app.tools.pokemon_ranker.analyze_battle_defensive_profile",
                 return_value={"recommendation": "Either works"},
             ),
             patch(
-                "unbounddb.app.tools.pokemon_ranker.get_trainer_pokemon_types",
+                "unbounddb.app.tools.pokemon_ranker.get_battle_pokemon_types",
                 return_value=[],
             ),
         ):
             # Empty available set should return empty DataFrame
-            result = rank_pokemon_for_trainer(trainer_id=1, top_n=0, available_pokemon=set())
+            result = rank_pokemon_for_battle(battle_id=1, top_n=0, available_pokemon=set())
             assert result.is_empty()

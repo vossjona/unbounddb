@@ -107,14 +107,14 @@ def _score_type_combination(
     }
 
 
-def get_trainer_move_types(trainer_id: int, db_path: Path | None = None) -> list[str]:
-    """Get unique offensive move types from a trainer's team.
+def get_battle_move_types(battle_id: int, db_path: Path | None = None) -> list[str]:
+    """Get unique offensive move types from a battle's team.
 
     Filters out Status moves (only Physical/Special count).
     Returns title-case types matching type_chart format.
 
     Args:
-        trainer_id: ID of the trainer to analyze.
+        battle_id: ID of the battle to analyze.
         db_path: Optional path to database.
 
     Returns:
@@ -124,26 +124,26 @@ def get_trainer_move_types(trainer_id: int, db_path: Path | None = None) -> list
 
     query = """
         SELECT DISTINCT m.type AS move_type
-        FROM trainer_pokemon tp
-        JOIN trainer_pokemon_moves tpm ON tp.id = tpm.trainer_pokemon_id
+        FROM battle_pokemon tp
+        JOIN battle_pokemon_moves tpm ON tp.id = tpm.battle_pokemon_id
         JOIN moves m ON tpm.move_key = m.move_key
-        WHERE tp.trainer_id = ?
+        WHERE tp.battle_id = ?
           AND m.category != 'Status'
           AND m.type IS NOT NULL
         ORDER BY m.type
     """
 
-    result = conn.execute(query, [trainer_id]).fetchall()
+    result = conn.execute(query, [battle_id]).fetchall()
     conn.close()
 
     return [row[0] for row in result]
 
 
-def get_trainer_pokemon_with_moves(trainer_id: int, db_path: Path | None = None) -> pl.DataFrame:
-    """Get trainer's Pokemon with their moves and types.
+def get_battle_pokemon_with_moves(battle_id: int, db_path: Path | None = None) -> pl.DataFrame:
+    """Get battle's Pokemon with their moves and types.
 
     Args:
-        trainer_id: ID of the trainer to analyze.
+        battle_id: ID of the battle to analyze.
         db_path: Optional path to database.
 
     Returns:
@@ -162,39 +162,39 @@ def get_trainer_pokemon_with_moves(trainer_id: int, db_path: Path | None = None)
             m.name AS move_name,
             m.type AS move_type,
             m.category AS move_category
-        FROM trainer_pokemon tp
+        FROM battle_pokemon tp
         JOIN pokemon p ON tp.pokemon_key = p.pokemon_key
-        JOIN trainer_pokemon_moves tpm ON tp.id = tpm.trainer_pokemon_id
+        JOIN battle_pokemon_moves tpm ON tp.id = tpm.battle_pokemon_id
         JOIN moves m ON tpm.move_key = m.move_key
-        WHERE tp.trainer_id = ?
+        WHERE tp.battle_id = ?
         ORDER BY tp.slot, tpm.slot
     """
 
-    result = conn.execute(query, [trainer_id]).pl()
+    result = conn.execute(query, [battle_id]).pl()
     conn.close()
 
     return result
 
 
-def analyze_trainer_defense(trainer_id: int, db_path: Path | None = None) -> pl.DataFrame:
-    """Analyze all 171 type combinations against a trainer's team.
+def analyze_battle_defense(battle_id: int, db_path: Path | None = None) -> pl.DataFrame:
+    """Analyze all 171 type combinations against a battle's team.
 
     Args:
-        trainer_id: ID of the trainer to analyze.
+        battle_id: ID of the battle to analyze.
         db_path: Optional path to database.
 
     Returns:
         DataFrame with columns:
         - type1, type2 (defensive typing)
         - immunity_count, resistance_count, neutral_count, weakness_count
-        - pokemon_neutralized (count of trainer Pokemon with no super-effective moves)
+        - pokemon_neutralized (count of battle Pokemon with no super-effective moves)
         - immunities_list, resistances_list (for detail display)
         - score (composite ranking score)
 
         Sorted by: score DESC
     """
-    # Get the trainer's move types
-    move_types = get_trainer_move_types(trainer_id, db_path)
+    # Get the battle's move types
+    move_types = get_battle_move_types(battle_id, db_path)
 
     if not move_types:
         return pl.DataFrame(
@@ -214,7 +214,7 @@ def analyze_trainer_defense(trainer_id: int, db_path: Path | None = None) -> pl.
         )
 
     # Get Pokemon with their moves for neutralization calculation
-    pokemon_moves_df = get_trainer_pokemon_with_moves(trainer_id, db_path)
+    pokemon_moves_df = get_battle_pokemon_with_moves(battle_id, db_path)
     pokemon_by_slot = _build_pokemon_move_types(pokemon_moves_df)
 
     # Analyze all 171 type combinations
@@ -229,15 +229,15 @@ def analyze_trainer_defense(trainer_id: int, db_path: Path | None = None) -> pl.
 
 
 def get_neutralized_pokemon_detail(
-    trainer_id: int,
+    battle_id: int,
     def_type1: str,
     def_type2: str | None,
     db_path: Path | None = None,
 ) -> pl.DataFrame:
-    """Get detail of which trainer Pokemon are neutralized by a defensive typing.
+    """Get detail of which battle Pokemon are neutralized by a defensive typing.
 
     Args:
-        trainer_id: ID of the trainer to analyze.
+        battle_id: ID of the battle to analyze.
         def_type1: Defensive type 1.
         def_type2: Defensive type 2 (or None for monotype).
         db_path: Optional path to database.
@@ -248,7 +248,7 @@ def get_neutralized_pokemon_detail(
         - best_move, best_move_type, best_effectiveness
         - is_neutralized (True if best_effectiveness <= 1.0)
     """
-    pokemon_moves_df = get_trainer_pokemon_with_moves(trainer_id, db_path)
+    pokemon_moves_df = get_battle_pokemon_with_moves(battle_id, db_path)
 
     if pokemon_moves_df.is_empty():
         return pl.DataFrame(

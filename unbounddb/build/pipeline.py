@@ -155,12 +155,12 @@ def _combine_pokemon_moves(
     return ("pokemon_moves", parquet_path)
 
 
-def _parse_trainers(
+def _parse_battles(
     source_dir: Path,
     curated_dir: Path,
     log: LogFunc,
 ) -> dict[str, Path]:
-    """Parse trainer data into 3 parquet files.
+    """Parse battle data into 3 parquet files.
 
     Args:
         source_dir: Directory containing trainers.txt file.
@@ -168,7 +168,7 @@ def _parse_trainers(
         log: Logging callback function.
 
     Returns:
-        Dict with keys: 'trainers', 'trainer_pokemon', 'trainer_pokemon_moves'.
+        Dict with keys: 'battles', 'battle_pokemon', 'battle_pokemon_moves'.
         Empty dict if trainers.txt not found.
     """
     trainers_path = source_dir / "trainers.txt"
@@ -180,27 +180,27 @@ def _parse_trainers(
     from unbounddb.ingestion.showdown_parser import parse_showdown_file_to_dataframes  # noqa: PLC0415
 
     log("Parsing trainers.txt...")
-    trainers_df, trainer_pokemon_df, trainer_pokemon_moves_df = parse_showdown_file_to_dataframes(trainers_path)
+    battles_df, battle_pokemon_df, battle_pokemon_moves_df = parse_showdown_file_to_dataframes(trainers_path)
 
     results: dict[str, Path] = {}
 
-    # Write trainers
-    trainers_parquet = curated_dir / "trainers.parquet"
-    trainers_df.write_parquet(trainers_parquet)
-    results["trainers"] = trainers_parquet
-    log(f"  -> {trainers_parquet} ({len(trainers_df)} rows)")
+    # Write battles
+    battles_parquet = curated_dir / "battles.parquet"
+    battles_df.write_parquet(battles_parquet)
+    results["battles"] = battles_parquet
+    log(f"  -> {battles_parquet} ({len(battles_df)} rows)")
 
-    # Write trainer_pokemon
-    trainer_pokemon_parquet = curated_dir / "trainer_pokemon.parquet"
-    trainer_pokemon_df.write_parquet(trainer_pokemon_parquet)
-    results["trainer_pokemon"] = trainer_pokemon_parquet
-    log(f"  -> {trainer_pokemon_parquet} ({len(trainer_pokemon_df)} rows)")
+    # Write battle_pokemon
+    battle_pokemon_parquet = curated_dir / "battle_pokemon.parquet"
+    battle_pokemon_df.write_parquet(battle_pokemon_parquet)
+    results["battle_pokemon"] = battle_pokemon_parquet
+    log(f"  -> {battle_pokemon_parquet} ({len(battle_pokemon_df)} rows)")
 
-    # Write trainer_pokemon_moves
-    trainer_pokemon_moves_parquet = curated_dir / "trainer_pokemon_moves.parquet"
-    trainer_pokemon_moves_df.write_parquet(trainer_pokemon_moves_parquet)
-    results["trainer_pokemon_moves"] = trainer_pokemon_moves_parquet
-    log(f"  -> {trainer_pokemon_moves_parquet} ({len(trainer_pokemon_moves_df)} rows)")
+    # Write battle_pokemon_moves
+    battle_pokemon_moves_parquet = curated_dir / "battle_pokemon_moves.parquet"
+    battle_pokemon_moves_df.write_parquet(battle_pokemon_moves_parquet)
+    results["battle_pokemon_moves"] = battle_pokemon_moves_parquet
+    log(f"  -> {battle_pokemon_moves_parquet} ({len(battle_pokemon_moves_df)} rows)")
 
     return results
 
@@ -416,9 +416,9 @@ def run_github_build_pipeline(
     if result := _parse_moves(source_dir, curated_dir, pokemon_moves_df, log):
         parquet_files[result[0]] = result[1]
 
-    # Parse trainer data
-    trainer_files = _parse_trainers(source_dir, curated_dir, log)
-    parquet_files.update(trainer_files)
+    # Parse battle data
+    battle_files = _parse_battles(source_dir, curated_dir, log)
+    parquet_files.update(battle_files)
 
     # Parse evolutions
     if result := _parse_evolutions(source_dir, curated_dir, log):

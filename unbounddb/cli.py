@@ -172,33 +172,33 @@ def ui(
 def _load_db_data_for_progression(
     log: Callable[[str], None],
 ) -> tuple[list[str], list[str]]:
-    """Load location and trainer names from database for progression matching.
+    """Load location and battle names from database for progression matching.
 
     Args:
         log: Logging function.
 
     Returns:
-        Tuple of (known_locations, db_trainer_names).
+        Tuple of (known_locations, db_battle_names).
     """
-    from unbounddb.app.queries import get_all_location_names, get_trainers_by_difficulty  # noqa: PLC0415
+    from unbounddb.app.queries import get_all_location_names, get_battles_by_difficulty  # noqa: PLC0415
 
     known_locations: list[str] = []
-    db_trainer_names: list[str] = []
+    db_battle_names: list[str] = []
 
     if settings.db_path.exists():
-        log("Loading known locations and trainers from database...")
+        log("Loading known locations and battles from database...")
         try:
             known_locations = get_all_location_names()
             log(f"  -> Loaded {len(known_locations)} locations")
-            trainers = get_trainers_by_difficulty()
-            db_trainer_names = [name for _, name in trainers]
-            log(f"  -> Loaded {len(db_trainer_names)} trainers")
+            battles = get_battles_by_difficulty()
+            db_battle_names = [name for _, name in battles]
+            log(f"  -> Loaded {len(db_battle_names)} battles")
         except Exception as e:
             log(f"[yellow]Warning: Could not load DB data:[/] {e}")
     else:
-        log("[yellow]Database not found, skipping location/trainer matching[/]")
+        log("[yellow]Database not found, skipping location/battle matching[/]")
 
-    return known_locations, db_trainer_names
+    return known_locations, db_battle_names
 
 
 @app.command(name="extract-progression")
@@ -236,12 +236,12 @@ def extract_progression(
         raise typer.Exit(1) from None
 
     # Get known locations and trainers from DB
-    known_locations, db_trainer_names = _load_db_data_for_progression(log)
+    known_locations, db_battle_names = _load_db_data_for_progression(log)
 
     # Parse walkthrough and save
     log("Parsing walkthrough for progression data...")
     try:
-        unlocks = parse_walkthrough(content, known_locations, db_trainer_names)
+        unlocks = parse_walkthrough(content, known_locations, db_battle_names)
         log(f"  -> Extracted {len(unlocks)} progression entries")
         log(f"  -> {sum(len(u.locations) for u in unlocks)} location unlocks")
         badge_count = sum(1 for u in unlocks if u.badge_number is not None)

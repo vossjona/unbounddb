@@ -64,12 +64,12 @@ def create_indexes(conn: duckdb.DuckDBPyConnection) -> None:
         if "move_key" in col_names:
             conn.execute(f"CREATE INDEX idx_{table_name}_move_key ON {table_name}(move_key)")
 
-        # Index for trainer foreign keys
-        if "trainer_id" in col_names:
-            conn.execute(f"CREATE INDEX idx_{table_name}_trainer_id ON {table_name}(trainer_id)")
+        # Index for battle foreign keys
+        if "battle_id" in col_names:
+            conn.execute(f"CREATE INDEX idx_{table_name}_battle_id ON {table_name}(battle_id)")
 
-        if "trainer_pokemon_id" in col_names:
-            conn.execute(f"CREATE INDEX idx_{table_name}_trainer_pokemon_id ON {table_name}(trainer_pokemon_id)")
+        if "battle_pokemon_id" in col_names:
+            conn.execute(f"CREATE INDEX idx_{table_name}_battle_pokemon_id ON {table_name}(battle_pokemon_id)")
 
         # Index for evolution foreign keys
         if "from_pokemon_key" in col_names:

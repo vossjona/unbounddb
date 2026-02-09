@@ -27,11 +27,11 @@ class EffectivenessResult(TypedDict):
     category: str
 
 
-def get_trainer_pokemon_types(trainer_id: int, db_path: Path | None = None) -> list[dict[str, Any]]:
-    """Get trainer's Pokemon with their types.
+def get_battle_pokemon_types(battle_id: int, db_path: Path | None = None) -> list[dict[str, Any]]:
+    """Get battle's Pokemon with their types.
 
     Args:
-        trainer_id: ID of the trainer to analyze.
+        battle_id: ID of the battle to analyze.
         db_path: Optional path to database.
 
     Returns:
@@ -45,13 +45,13 @@ def get_trainer_pokemon_types(trainer_id: int, db_path: Path | None = None) -> l
             tp.pokemon_key,
             p.type1,
             p.type2
-        FROM trainer_pokemon tp
+        FROM battle_pokemon tp
         JOIN pokemon p ON tp.pokemon_key = p.pokemon_key
-        WHERE tp.trainer_id = ?
+        WHERE tp.battle_id = ?
         ORDER BY tp.slot
     """
 
-    result = conn.execute(query, [trainer_id]).fetchall()
+    result = conn.execute(query, [battle_id]).fetchall()
     conn.close()
 
     return [
@@ -66,7 +66,7 @@ def get_trainer_pokemon_types(trainer_id: int, db_path: Path | None = None) -> l
 
 
 # Alias for internal use
-_build_trainer_pokemon_types = get_trainer_pokemon_types
+_build_battle_pokemon_types = get_battle_pokemon_types
 
 
 def _calculate_attack_effectiveness(atk_type: str, def_type1: str, def_type2: str | None) -> EffectivenessResult:
@@ -128,11 +128,11 @@ def _score_single_type(atk_type: str, pokemon_list: list[dict[str, Any]]) -> dic
     }
 
 
-def analyze_single_type_offense(trainer_id: int, db_path: Path | None = None) -> pl.DataFrame:
-    """Analyze all 18 types ranked by offensive effectiveness against a trainer.
+def analyze_single_type_offense(battle_id: int, db_path: Path | None = None) -> pl.DataFrame:
+    """Analyze all 18 types ranked by offensive effectiveness against a battle.
 
     Args:
-        trainer_id: ID of the trainer to analyze.
+        battle_id: ID of the battle to analyze.
         db_path: Optional path to database.
 
     Returns:
@@ -140,7 +140,7 @@ def analyze_single_type_offense(trainer_id: int, db_path: Path | None = None) ->
         resisted_count, immune_count, score
         Sorted by score DESC
     """
-    pokemon_list = _build_trainer_pokemon_types(trainer_id, db_path)
+    pokemon_list = _build_battle_pokemon_types(battle_id, db_path)
 
     if not pokemon_list:
         return pl.DataFrame(
@@ -213,11 +213,11 @@ def _score_type_combo(
     }
 
 
-def analyze_four_type_coverage(trainer_id: int, db_path: Path | None = None, top_n: int = 50) -> pl.DataFrame:
+def analyze_four_type_coverage(battle_id: int, db_path: Path | None = None, top_n: int = 50) -> pl.DataFrame:
     """Find best 4-type combinations for coverage. Evaluates all 3060 combos.
 
     Args:
-        trainer_id: ID of the trainer to analyze.
+        battle_id: ID of the battle to analyze.
         db_path: Optional path to database.
         top_n: Number of top results to return.
 
@@ -225,7 +225,7 @@ def analyze_four_type_coverage(trainer_id: int, db_path: Path | None = None, top
         DataFrame with columns: types, covered_count, total_pokemon, coverage_pct, score
         Sorted by score DESC
     """
-    pokemon_list = _build_trainer_pokemon_types(trainer_id, db_path)
+    pokemon_list = _build_battle_pokemon_types(battle_id, db_path)
 
     if not pokemon_list:
         return pl.DataFrame(
@@ -260,11 +260,11 @@ def analyze_four_type_coverage(trainer_id: int, db_path: Path | None = None, top
     return df
 
 
-def get_type_coverage_detail(trainer_id: int, atk_types: list[str], db_path: Path | None = None) -> pl.DataFrame:
+def get_type_coverage_detail(battle_id: int, atk_types: list[str], db_path: Path | None = None) -> pl.DataFrame:
     """Get per-Pokemon breakdown for attacking types.
 
     Args:
-        trainer_id: ID of the trainer to analyze.
+        battle_id: ID of the battle to analyze.
         atk_types: List of attacking types to analyze.
         db_path: Optional path to database.
 
@@ -272,7 +272,7 @@ def get_type_coverage_detail(trainer_id: int, atk_types: list[str], db_path: Pat
         DataFrame with columns: pokemon_key, slot, type1, type2,
         best_type, best_effectiveness, is_covered
     """
-    pokemon_list = _build_trainer_pokemon_types(trainer_id, db_path)
+    pokemon_list = _build_battle_pokemon_types(battle_id, db_path)
 
     if not pokemon_list:
         return pl.DataFrame(
@@ -315,11 +315,11 @@ def get_type_coverage_detail(trainer_id: int, atk_types: list[str], db_path: Pat
     return df.sort("slot")
 
 
-def get_single_type_detail(trainer_id: int, atk_type: str, db_path: Path | None = None) -> pl.DataFrame:
+def get_single_type_detail(battle_id: int, atk_type: str, db_path: Path | None = None) -> pl.DataFrame:
     """Get per-Pokemon breakdown for a single attacking type.
 
     Args:
-        trainer_id: ID of the trainer to analyze.
+        battle_id: ID of the battle to analyze.
         atk_type: The attacking type to analyze.
         db_path: Optional path to database.
 
@@ -327,7 +327,7 @@ def get_single_type_detail(trainer_id: int, atk_type: str, db_path: Path | None 
         DataFrame with columns: pokemon_key, slot, type1, type2,
         effectiveness, category
     """
-    pokemon_list = _build_trainer_pokemon_types(trainer_id, db_path)
+    pokemon_list = _build_battle_pokemon_types(battle_id, db_path)
 
     if not pokemon_list:
         return pl.DataFrame(

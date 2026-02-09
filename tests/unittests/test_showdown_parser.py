@@ -1,13 +1,11 @@
-"""ABOUTME: Tests for Showdown/PokePaste format trainer battle parsing.
-ABOUTME: Verifies TrainerPokemon extraction, EVs parsing, and double battle detection."""
+"""ABOUTME: Tests for Showdown/PokePaste format battle data parsing.
+ABOUTME: Verifies TrainerPokemon extraction, EVs parsing, and double battle merging."""
 
 import pytest
 
 from unbounddb.ingestion.showdown_parser import (
     _parse_evs,
     entries_to_dataframes,
-    get_battle_group,
-    is_double_battle,
     parse_showdown_entry,
     parse_showdown_file,
 )
@@ -52,48 +50,6 @@ class TestParseEvs:
         """Empty string returns all zeros."""
         evs = _parse_evs("")
         assert all(v == 0 for v in evs.values())
-
-
-class TestGetBattleGroup:
-    """Tests for get_battle_group function."""
-
-    def test_simple_trainer(self) -> None:
-        """Battle group for simple trainer name."""
-        assert get_battle_group("Leader Mirskle", "Insane") == "leader_mirskle_insane"
-
-    def test_trainer_without_difficulty(self) -> None:
-        """Battle group without difficulty level."""
-        assert get_battle_group("Leader Mirskle", None) == "leader_mirskle"
-
-    def test_partner_trainer(self) -> None:
-        """Partner trainer uses base trainer name."""
-        assert get_battle_group("Shadow Grunt w/ Marlon 1", "Insane") == "marlon_1_insane"
-
-    def test_main_trainer_matches_partner(self) -> None:
-        """Main and partner trainers have same battle group."""
-        _main_group = get_battle_group("Shadow Admin Marlon 1", "Insane")
-        partner_group = get_battle_group("Shadow Grunt w/ Marlon 1", "Insane")
-        # Note: main trainer includes full name, partner extracts after "w/"
-        # The main trainer's group is different since it includes the full name
-        assert _main_group == "shadow_admin_marlon_1_insane"
-        assert partner_group == "marlon_1_insane"
-
-
-class TestIsDoubleBattle:
-    """Tests for is_double_battle function."""
-
-    def test_single_battle(self) -> None:
-        """Single battle trainer."""
-        assert is_double_battle("Leader Mirskle") is False
-
-    def test_double_battle_partner(self) -> None:
-        """Double battle partner detected."""
-        assert is_double_battle("Shadow Grunt w/ Marlon 1") is True
-
-    def test_double_battle_main(self) -> None:
-        """Main trainer in double battle is not marked (no w/)."""
-        # The main trainer doesn't have "w/" in their name
-        assert is_double_battle("Shadow Admin Marlon 1") is False
 
 
 class TestParseShowdownEntry:
@@ -272,7 +228,7 @@ class TestEntriesToDataframes:
     """Tests for entries_to_dataframes function."""
 
     def test_basic_conversion(self) -> None:
-        """Convert entries to DataFrames."""
+        """Convert entries to DataFrames with battle_id column."""
         content = """Leader Mirskle - Insane (Floette) @ Grassy Seed
 Level: 19
 Bold Nature
@@ -291,13 +247,13 @@ EVs: 252 SpA / 252 Spe / 4 HP
 - Moonblast
 - Energy Ball"""
         entries = parse_showdown_file(content)
-        trainers_df, pokemon_df, moves_df = entries_to_dataframes(entries)
+        battles_df, pokemon_df, moves_df = entries_to_dataframes(entries)
 
-        # One unique trainer
-        assert len(trainers_df) == 1
-        assert trainers_df["name"][0] == "Leader Mirskle"
-        assert trainers_df["difficulty"][0] == "Insane"
-        assert trainers_df["is_double_battle"][0] is False
+        # One unique battle
+        assert len(battles_df) == 1
+        assert battles_df["name"][0] == "Leader Mirskle"
+        assert battles_df["difficulty"][0] == "Insane"
+        assert "battle_id" in battles_df.columns
 
         # Two Pokemon
         assert len(pokemon_df) == 2
@@ -305,12 +261,14 @@ EVs: 252 SpA / 252 Spe / 4 HP
         assert pokemon_df["pokemon_key"][1] == "whimsicott"
         assert pokemon_df["slot"][0] == 1
         assert pokemon_df["slot"][1] == 2
+        assert "battle_id" in pokemon_df.columns
 
         # 6 moves total (4 + 2)
         assert len(moves_df) == 6
+        assert "battle_pokemon_id" in moves_df.columns
 
-    def test_double_battle_detection(self) -> None:
-        """Double battle trainers are detected correctly."""
+    def test_double_battle_merging(self) -> None:
+        """Double battle partner Pokemon are merged into main battle entry."""
         content = """Shadow Admin Marlon 1 - Insane (Tyranitar) @ Leftovers
 Level: 75
 Adamant Nature
@@ -318,22 +276,57 @@ Ability: Sand Stream
 EVs: 252 HP / 252 Atk / 4 SpD
 - Stone Edge
 
+Shadow Admin Marlon 1 - Insane (Garchomp) @ Choice Scarf
+Level: 75
+Jolly Nature
+Ability: Rough Skin
+EVs: 252 Atk / 252 Spe / 4 HP
+- Earthquake
+
 Shadow Grunt w/ Marlon 1 - Insane (Sableye) @ Sitrus Berry
 Level: 70
 Calm Nature
 Ability: Prankster
 EVs: 252 HP / 252 SpD / 4 Def
-- Foul Play"""
+- Foul Play
+
+Shadow Grunt w/ Marlon 1 - Insane (Muk) @ Black Sludge
+Level: 70
+Adamant Nature
+Ability: Poison Touch
+EVs: 252 HP / 252 Atk / 4 SpD
+- Gunk Shot"""
         entries = parse_showdown_file(content)
-        trainers_df, _pokemon_df, _ = entries_to_dataframes(entries)
+        battles_df, pokemon_df, _ = entries_to_dataframes(entries)
 
-        # Two unique trainers
-        assert len(trainers_df) == 2
+        # Only one battle entry (partner merged into main)
+        assert len(battles_df) == 1
+        assert battles_df["name"][0] == "Shadow Admin Marlon 1"
 
-        # Find the partner trainer
-        partner_row = trainers_df.filter(trainers_df["name"].str.contains("w/"))
-        assert len(partner_row) == 1
-        assert partner_row["is_double_battle"][0] is True
+        # All 4 Pokemon belong to the same battle
+        assert len(pokemon_df) == 4
+        battle_ids = pokemon_df["battle_id"].unique().to_list()
+        assert len(battle_ids) == 1
+
+        # Slots are sequential 1-4
+        slots = pokemon_df["slot"].to_list()
+        assert slots == [1, 2, 3, 4]
+
+    def test_bracket_w_not_treated_as_partner(self) -> None:
+        """Entries with w/ inside brackets are standalone, not partners."""
+        content = """Crystal Peak [Hoopa w/ Rayquaza] - Insane (Hoopa) @ Focus Sash
+Level: 90
+Timid Nature
+Ability: Magician
+EVs: 252 SpA / 252 Spe / 4 HP
+- Psychic"""
+        entries = parse_showdown_file(content)
+        battles_df, pokemon_df, _ = entries_to_dataframes(entries)
+
+        # Should be a standalone battle (not treated as partner)
+        assert len(battles_df) == 1
+        assert battles_df["name"][0] == "Crystal Peak [Hoopa w/ Rayquaza]"
+        assert len(pokemon_df) == 1
 
     def test_pokemon_key_slugified(self) -> None:
         """Pokemon names are properly slugified."""
@@ -380,8 +373,8 @@ EVs: 252 SpA / 252 Spe / 4 HP
         assert pokemon_df["ev_sp_defense"][0] == 0
         assert pokemon_df["ev_speed"][0] == 252
 
-    def test_trainer_id_assignment(self) -> None:
-        """Trainer IDs are assigned correctly."""
+    def test_battle_id_assignment(self) -> None:
+        """Battle IDs are assigned correctly."""
         content = """Trainer A - Insane (Pikachu)
 Level: 50
 Timid Nature
@@ -403,15 +396,15 @@ Ability: Static
 EVs: 4 HP
 - Thunder"""
         entries = parse_showdown_file(content)
-        trainers_df, pokemon_df, _ = entries_to_dataframes(entries)
+        battles_df, pokemon_df, _ = entries_to_dataframes(entries)
 
-        # Two unique trainers (Trainer A - Insane and Trainer B - Expert)
-        assert len(trainers_df) == 2
+        # Two unique battles (Trainer A - Insane and Trainer B - Expert)
+        assert len(battles_df) == 2
 
         # Trainer A has 2 Pokemon, Trainer B has 1
-        trainer_a_id = trainers_df.filter(trainers_df["name"] == "Trainer A")["trainer_id"][0]
-        trainer_a_pokemon = pokemon_df.filter(pokemon_df["trainer_id"] == trainer_a_id)
-        assert len(trainer_a_pokemon) == 2
+        battle_a_id = battles_df.filter(battles_df["name"] == "Trainer A")["battle_id"][0]
+        battle_a_pokemon = pokemon_df.filter(pokemon_df["battle_id"] == battle_a_id)
+        assert len(battle_a_pokemon) == 2
 
     def test_move_slots(self) -> None:
         """Move slots are assigned correctly (1-4)."""
@@ -429,6 +422,72 @@ EVs: 4 HP
 
         slots = moves_df["slot"].to_list()
         assert slots == [1, 2, 3, 4]
+
+    def test_no_is_double_battle_or_battle_group_columns(self) -> None:
+        """Output DataFrames should not have is_double_battle or battle_group columns."""
+        content = """Trainer A - Insane (Pikachu)
+Level: 50
+Timid Nature
+Ability: Static
+EVs: 4 HP
+- Thunderbolt"""
+        entries = parse_showdown_file(content)
+        battles_df, pokemon_df, moves_df = entries_to_dataframes(entries)
+
+        assert "is_double_battle" not in battles_df.columns
+        assert "battle_group" not in battles_df.columns
+        assert "trainer_id" not in battles_df.columns
+        assert "trainer_id" not in pokemon_df.columns
+        assert "trainer_pokemon_id" not in moves_df.columns
+
+    def test_elite_four_champion_combined(self) -> None:
+        """Combined Elite Four + Champion battle is created per difficulty."""
+        content = """Elite Four Lorelei - Insane (Lapras) @ Leftovers
+Level: 80
+Modest Nature
+Ability: Water Absorb
+EVs: 252 HP / 252 SpA / 4 SpD
+- Ice Beam
+- Surf
+
+Elite Four Bruno - Insane (Machamp) @ Choice Band
+Level: 80
+Adamant Nature
+Ability: Guts
+EVs: 252 Atk / 252 Spe / 4 HP
+- Close Combat
+- Stone Edge
+
+Champion Gary - Insane (Charizard) @ Charizardite Y
+Level: 85
+Timid Nature
+Ability: Blaze
+EVs: 252 SpA / 252 Spe / 4 HP
+- Flamethrower
+- Air Slash"""
+        entries = parse_showdown_file(content)
+        battles_df, pokemon_df, _ = entries_to_dataframes(entries)
+
+        # 3 individual battles + 1 combined = 4 total
+        assert len(battles_df) == 4
+
+        # Combined battle exists
+        combined = battles_df.filter(battles_df["name"] == "Elite Four + Champion")
+        assert len(combined) == 1
+        assert combined["difficulty"][0] == "Insane"
+
+        # Combined battle has all 3 Pokemon (from 3 individual battles)
+        combined_id = combined["battle_id"][0]
+        combined_pokemon = pokemon_df.filter(pokemon_df["battle_id"] == combined_id)
+        assert len(combined_pokemon) == 3
+
+        # Slots are sequential
+        slots = combined_pokemon["slot"].to_list()
+        assert slots == [1, 2, 3]
+
+        # Individual battles still exist
+        individual = battles_df.filter(battles_df["name"] != "Elite Four + Champion")
+        assert len(individual) == 3
 
 
 class TestDifficultyVariants:

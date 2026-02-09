@@ -211,7 +211,7 @@ def get_table_list(db_path: Path | None = None) -> list[str]:
 
 
 def get_difficulties(db_path: Path | None = None) -> list[str]:
-    """Get list of unique difficulty levels from trainers table.
+    """Get list of unique difficulty levels from battles table.
 
     Args:
         db_path: Optional path to database.
@@ -223,7 +223,7 @@ def get_difficulties(db_path: Path | None = None) -> list[str]:
 
     try:
         result = conn.execute(
-            "SELECT DISTINCT difficulty FROM trainers WHERE difficulty IS NOT NULL ORDER BY difficulty"
+            "SELECT DISTINCT difficulty FROM battles WHERE difficulty IS NOT NULL ORDER BY difficulty"
         ).fetchall()
         conn.close()
         return [r[0] for r in result]
@@ -232,24 +232,24 @@ def get_difficulties(db_path: Path | None = None) -> list[str]:
         return []
 
 
-def get_trainers_by_difficulty(difficulty: str | None = None, db_path: Path | None = None) -> list[tuple[int, str]]:
-    """Get list of (trainer_id, name) tuples, optionally filtered by difficulty.
+def get_battles_by_difficulty(difficulty: str | None = None, db_path: Path | None = None) -> list[tuple[int, str]]:
+    """Get list of (battle_id, name) tuples, optionally filtered by difficulty.
 
     Args:
         difficulty: Optional difficulty level to filter by.
         db_path: Optional path to database.
 
     Returns:
-        List of (trainer_id, name) tuples sorted by name.
+        List of (battle_id, name) tuples sorted by name.
     """
     conn = _get_conn(db_path)
 
     try:
         if difficulty is None:
-            result = conn.execute("SELECT trainer_id, name FROM trainers ORDER BY name").fetchall()
+            result = conn.execute("SELECT battle_id, name FROM battles ORDER BY name").fetchall()
         else:
             result = conn.execute(
-                "SELECT trainer_id, name FROM trainers WHERE difficulty = ? ORDER BY name",
+                "SELECT battle_id, name FROM battles WHERE difficulty = ? ORDER BY name",
                 [difficulty],
             ).fetchall()
         conn.close()
@@ -259,27 +259,27 @@ def get_trainers_by_difficulty(difficulty: str | None = None, db_path: Path | No
         return []
 
 
-def get_trainer_by_id(trainer_id: int, db_path: Path | None = None) -> dict[str, str | None] | None:
-    """Get trainer details by ID.
+def get_battle_by_id(battle_id: int, db_path: Path | None = None) -> dict[str, str | None] | None:
+    """Get battle details by ID.
 
     Args:
-        trainer_id: ID of the trainer.
+        battle_id: ID of the battle.
         db_path: Optional path to database.
 
     Returns:
-        Dictionary with trainer details or None if not found.
+        Dictionary with battle details or None if not found.
     """
     conn = _get_conn(db_path)
 
     try:
         result = conn.execute(
-            "SELECT trainer_id, name, difficulty FROM trainers WHERE trainer_id = ?",
-            [trainer_id],
+            "SELECT battle_id, name, difficulty FROM battles WHERE battle_id = ?",
+            [battle_id],
         ).fetchone()
         conn.close()
         if result:
             return {
-                "trainer_id": result[0],
+                "battle_id": result[0],
                 "name": result[1],
                 "difficulty": result[2],
             }
@@ -289,18 +289,18 @@ def get_trainer_by_id(trainer_id: int, db_path: Path | None = None) -> dict[str,
         return None
 
 
-def get_trainer_team_with_moves(trainer_id: int, db_path: Path | None = None) -> pl.DataFrame:
-    """Get a trainer's full team with Pokemon types and move details.
+def get_battle_team_with_moves(battle_id: int, db_path: Path | None = None) -> pl.DataFrame:
+    """Get a battle's full team with Pokemon types and move details.
 
-    Joins: trainers -> trainer_pokemon -> pokemon (for types)
-           trainer_pokemon -> trainer_pokemon_moves -> moves (for move types)
+    Joins: battles -> battle_pokemon -> pokemon (for types)
+           battle_pokemon -> battle_pokemon_moves -> moves (for move types)
 
     Args:
-        trainer_id: ID of the trainer.
+        battle_id: ID of the battle.
         db_path: Optional path to database.
 
     Returns:
-        DataFrame with trainer's team and move information.
+        DataFrame with battle's team and move information.
     """
     conn = _get_conn(db_path)
 
@@ -314,16 +314,16 @@ def get_trainer_team_with_moves(trainer_id: int, db_path: Path | None = None) ->
             m.name AS move_name,
             m.type AS move_type,
             m.category AS move_category
-        FROM trainer_pokemon tp
+        FROM battle_pokemon tp
         JOIN pokemon p ON tp.pokemon_key = p.pokemon_key
-        JOIN trainer_pokemon_moves tpm ON tp.id = tpm.trainer_pokemon_id
+        JOIN battle_pokemon_moves tpm ON tp.id = tpm.battle_pokemon_id
         JOIN moves m ON tpm.move_key = m.move_key
-        WHERE tp.trainer_id = ?
+        WHERE tp.battle_id = ?
         ORDER BY tp.slot, tpm.slot
     """
 
     try:
-        result = conn.execute(query, [trainer_id]).pl()
+        result = conn.execute(query, [battle_id]).pl()
         conn.close()
         return result
     except Exception as e:

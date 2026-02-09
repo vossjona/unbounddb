@@ -9,11 +9,11 @@ import polars as pl
 from unbounddb.app.queries import _get_conn
 
 
-def get_trainer_pokemon_with_stats(trainer_id: int, db_path: Path | None = None) -> pl.DataFrame:
-    """Get trainer's Pokemon with base stats.
+def get_battle_pokemon_with_stats(battle_id: int, db_path: Path | None = None) -> pl.DataFrame:
+    """Get battle's Pokemon with base stats.
 
     Args:
-        trainer_id: ID of the trainer to analyze.
+        battle_id: ID of the battle to analyze.
         db_path: Optional path to database.
 
     Returns:
@@ -30,23 +30,23 @@ def get_trainer_pokemon_with_stats(trainer_id: int, db_path: Path | None = None)
             p.defense,
             p.sp_attack,
             p.sp_defense
-        FROM trainer_pokemon tp
+        FROM battle_pokemon tp
         JOIN pokemon p ON tp.pokemon_key = p.pokemon_key
-        WHERE tp.trainer_id = ?
+        WHERE tp.battle_id = ?
         ORDER BY tp.slot
     """
 
-    result = conn.execute(query, [trainer_id]).pl()
+    result = conn.execute(query, [battle_id]).pl()
     conn.close()
 
     return result
 
 
-def get_trainer_pokemon_move_categories(trainer_id: int, db_path: Path | None = None) -> pl.DataFrame:
-    """Get trainer's Pokemon with their move categories.
+def get_battle_pokemon_move_categories(battle_id: int, db_path: Path | None = None) -> pl.DataFrame:
+    """Get battle's Pokemon with their move categories.
 
     Args:
-        trainer_id: ID of the trainer to analyze.
+        battle_id: ID of the battle to analyze.
         db_path: Optional path to database.
 
     Returns:
@@ -63,14 +63,14 @@ def get_trainer_pokemon_move_categories(trainer_id: int, db_path: Path | None = 
             m.name AS move_name,
             m.category,
             m.power
-        FROM trainer_pokemon tp
-        JOIN trainer_pokemon_moves tpm ON tp.id = tpm.trainer_pokemon_id
+        FROM battle_pokemon tp
+        JOIN battle_pokemon_moves tpm ON tp.id = tpm.battle_pokemon_id
         JOIN moves m ON tpm.move_key = m.move_key
-        WHERE tp.trainer_id = ?
+        WHERE tp.battle_id = ?
         ORDER BY tp.slot, tpm.slot
     """
 
-    result = conn.execute(query, [trainer_id]).pl()
+    result = conn.execute(query, [battle_id]).pl()
     conn.close()
 
     return result
@@ -226,13 +226,13 @@ def _empty_offensive_profile() -> dict[str, Any]:
     }
 
 
-def analyze_trainer_offensive_profile(trainer_id: int, db_path: Path | None = None) -> dict[str, Any]:
-    """Analyze what type of attacking moves the trainer uses.
+def analyze_battle_offensive_profile(battle_id: int, db_path: Path | None = None) -> dict[str, Any]:
+    """Analyze what type of attacking moves the battle uses.
 
     This tells us whether to prioritize Defense or Sp.Defense.
 
     Args:
-        trainer_id: ID of the trainer to analyze.
+        battle_id: ID of the battle to analyze.
         db_path: Optional path to database.
 
     Returns:
@@ -247,8 +247,8 @@ def analyze_trainer_offensive_profile(trainer_id: int, db_path: Path | None = No
         - recommendation: str ("Prioritize Defense" / "Prioritize Sp.Def" / "Balance both")
         - pokemon_details: list[dict] (per-Pokemon breakdown)
     """
-    moves_df = get_trainer_pokemon_move_categories(trainer_id, db_path)
-    stats_df = get_trainer_pokemon_with_stats(trainer_id, db_path)
+    moves_df = get_battle_pokemon_move_categories(battle_id, db_path)
+    stats_df = get_battle_pokemon_with_stats(battle_id, db_path)
 
     if moves_df.is_empty() or stats_df.is_empty():
         return _empty_offensive_profile()
@@ -294,13 +294,13 @@ def analyze_trainer_offensive_profile(trainer_id: int, db_path: Path | None = No
     }
 
 
-def analyze_trainer_defensive_profile(trainer_id: int, db_path: Path | None = None) -> dict[str, Any]:
-    """Analyze what defensive stats the trainer's team has.
+def analyze_battle_defensive_profile(battle_id: int, db_path: Path | None = None) -> dict[str, Any]:
+    """Analyze what defensive stats the battle's team has.
 
     This tells us whether to use Physical or Special moves.
 
     Args:
-        trainer_id: ID of the trainer to analyze.
+        battle_id: ID of the battle to analyze.
         db_path: Optional path to database.
 
     Returns:
@@ -313,7 +313,7 @@ def analyze_trainer_defensive_profile(trainer_id: int, db_path: Path | None = No
         - recommendation: str ("Use Physical moves" / "Use Special moves" / "Either works")
         - pokemon_details: list[dict] (per-Pokemon breakdown)
     """
-    stats_df = get_trainer_pokemon_with_stats(trainer_id, db_path)
+    stats_df = get_battle_pokemon_with_stats(battle_id, db_path)
 
     # Handle empty results
     if stats_df.is_empty():

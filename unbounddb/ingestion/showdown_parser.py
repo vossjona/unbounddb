@@ -95,33 +95,39 @@ def _parse_evs(evs_str: str) -> dict[str, int]:
     return result
 
 
-def get_battle_group(trainer_name: str, difficulty: str | None) -> str:
-    """Generate battle group identifier for double battle matching.
+def _is_partner_entry(trainer_name: str) -> bool:
+    """Check if a trainer name is a double battle partner entry.
 
-    Args:
-        trainer_name: Full trainer name, may contain "w/" for partners.
-        difficulty: Difficulty level like "Insane", "Expert", etc.
-
-    Returns:
-        Slugified battle group identifier.
-    """
-    # If this is a partner, extract the base trainer name after "w/"
-    base = trainer_name.split(" w/ ")[1] if " w/ " in trainer_name else trainer_name
-
-    suffix = f"_{difficulty.lower()}" if difficulty else ""
-    return slugify(base) + suffix
-
-
-def is_double_battle(trainer_name: str) -> bool:
-    """Check if a trainer name indicates a double battle partner.
+    Partner entries have "w/" *outside* of bracket notation.
+    E.g. "Shadow Grunt w/ Marlon 1" is a partner, but
+    "Crystal Peak [Hoopa w/ Rayquaza]" is NOT (w/ is inside brackets).
 
     Args:
         trainer_name: Full trainer name.
 
     Returns:
-        True if this is a double battle entry.
+        True if this is a partner entry whose Pokemon should be merged.
     """
-    return " w/ " in trainer_name
+    if " w/ " not in trainer_name:
+        return False
+    # If "w/" appears inside brackets like "[Hoopa w/ Rayquaza]", it's not a partner
+    bracket_pos = trainer_name.find("[")
+    w_pos = trainer_name.find(" w/ ")
+    return bracket_pos == -1 or w_pos < bracket_pos
+
+
+def _extract_partner_base(trainer_name: str) -> str:
+    """Extract the base trainer name from a partner entry.
+
+    "Shadow Grunt w/ Marlon 1" -> "Marlon 1"
+
+    Args:
+        trainer_name: Partner trainer name containing " w/ ".
+
+    Returns:
+        The base trainer name after " w/ ".
+    """
+    return trainer_name.split(" w/ ")[1]
 
 
 @dataclass
@@ -244,62 +250,115 @@ def parse_showdown_file(content: str) -> list[TrainerPokemon]:
     return entries
 
 
+def _find_main_battle_for_partner(
+    partner_name: str,
+    difficulty: str | None,
+    battle_lookup: dict[tuple[str, str | None], int],
+) -> int | None:
+    """Find the main battle ID for a double battle partner.
+
+    Searches for a main trainer whose name ends with the part after "w/".
+    E.g., partner "Shadow Grunt w/ Marlon 1" matches "Shadow Admin Marlon 1".
+
+    Args:
+        partner_name: The partner trainer name (contains " w/ ").
+        difficulty: Difficulty level to match.
+        battle_lookup: Existing (name, difficulty) -> battle_id mapping.
+
+    Returns:
+        The battle_id of the matching main trainer, or None if not found.
+    """
+    base = _extract_partner_base(partner_name)
+    for (name, diff), battle_id in battle_lookup.items():
+        if diff == difficulty and name.endswith(base) and name != partner_name:
+            return battle_id
+    return None
+
+
 def entries_to_dataframes(
     entries: list[TrainerPokemon],
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     """Convert parsed entries to three normalized DataFrames.
 
+    Double battle partners (entries with "w/" outside brackets) are merged
+    into their main battle entry. Their Pokemon get sequential slot numbers
+    continuing after the main trainer's team.
+
+    After building individual battles, combined "Elite Four + Champion"
+    entries are added per difficulty, grouping all E4 and Champion Pokemon.
+
     Args:
         entries: List of TrainerPokemon dataclasses.
 
     Returns:
-        Tuple of (trainers_df, trainer_pokemon_df, trainer_pokemon_moves_df).
+        Tuple of (battles_df, battle_pokemon_df, battle_pokemon_moves_df).
     """
-    # Build trainer lookup: (name, difficulty) -> trainer_id
-    trainer_lookup: dict[tuple[str, str | None], int] = {}
-    trainers_data: list[dict[str, int | str | bool | None]] = []
+    # First pass: build battle lookup, skipping partner entries
+    battle_lookup: dict[tuple[str, str | None], int] = {}
+    battles_data: list[dict[str, int | str | None]] = []
 
     for entry in entries:
         key = (entry.trainer_name, entry.difficulty)
-        if key not in trainer_lookup:
-            trainer_id = len(trainer_lookup) + 1
-            trainer_lookup[key] = trainer_id
+        if key in battle_lookup:
+            continue
+        if _is_partner_entry(entry.trainer_name):
+            continue
 
-            battle_group = get_battle_group(entry.trainer_name, entry.difficulty)
-            is_double = is_double_battle(entry.trainer_name)
+        battle_id = len(battle_lookup) + 1
+        battle_lookup[key] = battle_id
+        battles_data.append(
+            {
+                "battle_id": battle_id,
+                "name": entry.trainer_name,
+                "difficulty": entry.difficulty,
+            }
+        )
 
-            trainers_data.append(
-                {
-                    "trainer_id": trainer_id,
-                    "name": entry.trainer_name,
-                    "difficulty": entry.difficulty,
-                    "battle_group": battle_group,
-                    "is_double_battle": is_double,
-                }
-            )
+    # Second pass: build battle_pokemon and battle_pokemon_moves
+    battle_pokemon_data: list[dict[str, int | str | None]] = []
+    battle_pokemon_moves_data: list[dict[str, int | str]] = []
 
-    # Build trainer_pokemon and trainer_pokemon_moves
-    trainer_pokemon_data: list[dict[str, int | str | None]] = []
-    trainer_pokemon_moves_data: list[dict[str, int | str]] = []
+    # Track slot per battle
+    battle_slots: dict[int, int] = {}
+    pokemon_id_counter = 0
 
-    # Track slot per trainer
-    trainer_slots: dict[int, int] = {}
+    for entry in entries:
+        # Determine which battle this entry belongs to
+        if _is_partner_entry(entry.trainer_name):
+            matched_id = _find_main_battle_for_partner(entry.trainer_name, entry.difficulty, battle_lookup)
+            if matched_id is not None:
+                battle_id = matched_id
+            else:
+                # No matching main trainer found — treat as standalone battle
+                key = (entry.trainer_name, entry.difficulty)
+                if key not in battle_lookup:
+                    battle_id = len(battle_lookup) + 1
+                    battle_lookup[key] = battle_id
+                    battles_data.append(
+                        {
+                            "battle_id": battle_id,
+                            "name": entry.trainer_name,
+                            "difficulty": entry.difficulty,
+                        }
+                    )
+                else:
+                    battle_id = battle_lookup[key]
+        else:
+            battle_id = battle_lookup[(entry.trainer_name, entry.difficulty)]
 
-    for pokemon_id, entry in enumerate(entries, start=1):
-        trainer_id = trainer_lookup[(entry.trainer_name, entry.difficulty)]
+        # Increment slot for this battle
+        if battle_id not in battle_slots:
+            battle_slots[battle_id] = 0
+        battle_slots[battle_id] += 1
+        slot = battle_slots[battle_id]
 
-        # Increment slot for this trainer
-        if trainer_id not in trainer_slots:
-            trainer_slots[trainer_id] = 0
-        trainer_slots[trainer_id] += 1
-        slot = trainer_slots[trainer_id]
-
+        pokemon_id_counter += 1
         pokemon_key = slugify(entry.pokemon)
 
-        trainer_pokemon_data.append(
+        battle_pokemon_data.append(
             {
-                "id": pokemon_id,
-                "trainer_id": trainer_id,
+                "id": pokemon_id_counter,
+                "battle_id": battle_id,
                 "pokemon_key": pokemon_key,
                 "slot": slot,
                 "level": entry.level,
@@ -318,20 +377,161 @@ def entries_to_dataframes(
         # Add moves
         for move_slot, move in enumerate(entry.moves, start=1):
             move_key = slugify(move)
-            trainer_pokemon_moves_data.append(
+            battle_pokemon_moves_data.append(
                 {
-                    "trainer_pokemon_id": pokemon_id,
+                    "battle_pokemon_id": pokemon_id_counter,
                     "move_key": move_key,
                     "slot": move_slot,
                 }
             )
 
-    # Create DataFrames
-    trainers_df = pl.DataFrame(trainers_data)
-    trainer_pokemon_df = pl.DataFrame(trainer_pokemon_data)
-    trainer_pokemon_moves_df = pl.DataFrame(trainer_pokemon_moves_data)
+    # Add combined Elite Four + Champion battles
+    _add_e4_champion_combined(
+        battles_data,
+        battle_pokemon_data,
+        battle_pokemon_moves_data,
+        battle_lookup,
+        battle_slots,
+        pokemon_id_counter,
+    )
 
-    return trainers_df, trainer_pokemon_df, trainer_pokemon_moves_df
+    # Create DataFrames
+    battles_df = pl.DataFrame(battles_data)
+    battle_pokemon_df = pl.DataFrame(battle_pokemon_data)
+    battle_pokemon_moves_df = pl.DataFrame(battle_pokemon_moves_data)
+
+    return battles_df, battle_pokemon_df, battle_pokemon_moves_df
+
+
+def _group_by_int_key(
+    data: list[dict[str, int | str | None]],
+    key: str,
+) -> dict[int, list[dict[str, int | str | None]]]:
+    """Group a list of dicts by an integer key field.
+
+    Args:
+        data: List of dicts containing the key field.
+        key: The key name whose integer value to group by.
+
+    Returns:
+        Dict mapping integer key values to lists of matching dicts.
+    """
+    result: dict[int, list[dict[str, int | str | None]]] = {}
+    for item in data:
+        int_key = int(item[key])  # type: ignore[arg-type]
+        if int_key not in result:
+            result[int_key] = []
+        result[int_key].append(item)
+    return result
+
+
+def _group_moves_by_pokemon_id(
+    moves_data: list[dict[str, int | str]],
+) -> dict[int, list[dict[str, int | str]]]:
+    """Group moves data by battle_pokemon_id.
+
+    Args:
+        moves_data: List of move dicts with battle_pokemon_id field.
+
+    Returns:
+        Dict mapping pokemon ID to lists of move dicts.
+    """
+    result: dict[int, list[dict[str, int | str]]] = {}
+    for move in moves_data:
+        pid = int(move["battle_pokemon_id"])
+        if pid not in result:
+            result[pid] = []
+        result[pid].append(move)
+    return result
+
+
+def _add_e4_champion_combined(
+    battles_data: list[dict[str, int | str | None]],
+    battle_pokemon_data: list[dict[str, int | str | None]],
+    battle_pokemon_moves_data: list[dict[str, int | str]],
+    battle_lookup: dict[tuple[str, str | None], int],
+    battle_slots: dict[int, int],
+    pokemon_id_counter: int,
+) -> None:
+    """Add combined Elite Four + Champion battle entries.
+
+    For each difficulty that has both E4 and Champion entries, creates an
+    additional combined battle with all their Pokemon merged sequentially.
+    Individual E4/Champion battles are kept unchanged.
+
+    Args:
+        battles_data: Mutable list of battle dicts (appended to).
+        battle_pokemon_data: Mutable list of battle pokemon dicts (appended to).
+        battle_pokemon_moves_data: Mutable list of move dicts (appended to).
+        battle_lookup: Existing (name, difficulty) -> battle_id mapping.
+        battle_slots: Existing battle_id -> slot count mapping.
+        pokemon_id_counter: Current max pokemon ID (for assigning new IDs).
+    """
+    # Group E4/Champion battle_ids by difficulty
+    e4_champion_by_difficulty: dict[str | None, list[int]] = {}
+    for (name, difficulty), bid in battle_lookup.items():
+        if name.startswith("Elite Four") or name.startswith("Champion"):
+            if difficulty not in e4_champion_by_difficulty:
+                e4_champion_by_difficulty[difficulty] = []
+            e4_champion_by_difficulty[difficulty].append(bid)
+
+    pokemon_by_battle = _group_by_int_key(battle_pokemon_data, "battle_id")
+    moves_by_pokemon = _group_moves_by_pokemon_id(battle_pokemon_moves_data)
+
+    for difficulty, battle_ids in e4_champion_by_difficulty.items():
+        if len(battle_ids) < 2:  # noqa: PLR2004
+            continue  # Need at least E4 + Champion to combine
+
+        # Create combined battle entry
+        combined_battle_id = len(battle_lookup) + 1
+        combined_key = ("Elite Four + Champion", difficulty)
+        battle_lookup[combined_key] = combined_battle_id
+        battles_data.append(
+            {
+                "battle_id": combined_battle_id,
+                "name": "Elite Four + Champion",
+                "difficulty": difficulty,
+            }
+        )
+
+        # Copy Pokemon from all E4/Champion battles with sequential slots
+        combined_slot = 0
+        for source_battle_id in sorted(battle_ids):
+            for pkmn in pokemon_by_battle.get(source_battle_id, []):
+                combined_slot += 1
+                pokemon_id_counter += 1
+
+                battle_pokemon_data.append(
+                    {
+                        "id": pokemon_id_counter,
+                        "battle_id": combined_battle_id,
+                        "pokemon_key": pkmn["pokemon_key"],
+                        "slot": combined_slot,
+                        "level": pkmn["level"],
+                        "ability": pkmn["ability"],
+                        "held_item": pkmn["held_item"],
+                        "nature": pkmn["nature"],
+                        "ev_hp": pkmn["ev_hp"],
+                        "ev_attack": pkmn["ev_attack"],
+                        "ev_defense": pkmn["ev_defense"],
+                        "ev_sp_attack": pkmn["ev_sp_attack"],
+                        "ev_sp_defense": pkmn["ev_sp_defense"],
+                        "ev_speed": pkmn["ev_speed"],
+                    }
+                )
+
+                # Copy moves for this Pokemon
+                old_pokemon_id = int(pkmn["id"])  # type: ignore[arg-type]
+                battle_pokemon_moves_data.extend(
+                    {
+                        "battle_pokemon_id": pokemon_id_counter,
+                        "move_key": move["move_key"],
+                        "slot": move["slot"],
+                    }
+                    for move in moves_by_pokemon.get(old_pokemon_id, [])
+                )
+
+        battle_slots[combined_battle_id] = combined_slot
 
 
 def parse_showdown_file_to_dataframes(
@@ -343,7 +543,7 @@ def parse_showdown_file_to_dataframes(
         path: Path to the Showdown/PokePaste format file.
 
     Returns:
-        Tuple of (trainers_df, trainer_pokemon_df, trainer_pokemon_moves_df).
+        Tuple of (battles_df, battle_pokemon_df, battle_pokemon_moves_df).
     """
     content = path.read_text(encoding="utf-8")
     entries = parse_showdown_file(content)

@@ -1,4 +1,4 @@
-# ABOUTME: Pokemon ranker tool for ranking Pokemon against trainer matchups.
+# ABOUTME: Pokemon ranker tool for ranking Pokemon against battle matchups.
 # ABOUTME: Combines defensive typing, offensive moves, and stat alignment into a composite score.
 
 from pathlib import Path
@@ -7,9 +7,9 @@ from typing import Any
 import polars as pl
 
 from unbounddb.app.queries import _get_conn
-from unbounddb.app.tools.defensive_suggester import get_trainer_move_types
-from unbounddb.app.tools.offensive_suggester import analyze_single_type_offense, get_trainer_pokemon_types
-from unbounddb.app.tools.phys_spec_analyzer import analyze_trainer_defensive_profile
+from unbounddb.app.tools.defensive_suggester import get_battle_move_types
+from unbounddb.app.tools.offensive_suggester import analyze_single_type_offense, get_battle_pokemon_types
+from unbounddb.app.tools.phys_spec_analyzer import analyze_battle_defensive_profile
 from unbounddb.utils.type_chart import (
     IMMUNITY_VALUE,
     RESISTANCE_THRESHOLD,
@@ -76,21 +76,21 @@ def get_all_learnable_offensive_moves(db_path: Path | None = None) -> pl.DataFra
 
 
 def get_recommended_types(
-    trainer_id: int,
+    battle_id: int,
     top_n: int = 4,
     db_path: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Get top N offensive types from analyze_single_type_offense().
 
     Args:
-        trainer_id: ID of the trainer to analyze.
+        battle_id: ID of the battle to analyze.
         top_n: Number of top types to return (default 4).
         db_path: Optional path to database.
 
     Returns:
         List of dicts with keys: type, score, rank (1-indexed)
     """
-    single_type_df = analyze_single_type_offense(trainer_id, db_path)
+    single_type_df = analyze_single_type_offense(battle_id, db_path)
 
     if single_type_df.is_empty():
         return []
@@ -111,9 +111,9 @@ def get_recommended_types(
 def calculate_defense_score(
     type1: str,
     type2: str | None,
-    trainer_move_types: list[str],
+    battle_move_types: list[str],
 ) -> tuple[float, list[str], list[str], list[str]]:
-    """Calculate defense score for a Pokemon's typing against trainer's move types.
+    """Calculate defense score for a Pokemon's typing against battle's move types.
 
     The raw score formula:
         immunity_count * 3 + resistance_count * 2 - weakness_count * 4
@@ -123,12 +123,12 @@ def calculate_defense_score(
     Args:
         type1: Pokemon's primary type.
         type2: Pokemon's secondary type (or None for monotype).
-        trainer_move_types: List of move types the trainer uses.
+        battle_move_types: List of move types the battle uses.
 
     Returns:
         Tuple of (normalized_score, immunities, resistances, weaknesses)
     """
-    if not trainer_move_types:
+    if not battle_move_types:
         return 0.0, [], [], []
 
     # Skip Pokemon with non-standard types (e.g., Mystery)
@@ -141,7 +141,7 @@ def calculate_defense_score(
     resistances: list[str] = []
     weaknesses: list[str] = []
 
-    for move_type in trainer_move_types:
+    for move_type in battle_move_types:
         # Skip non-standard move types
         if move_type not in VALID_TYPES:
             continue
@@ -160,7 +160,7 @@ def calculate_defense_score(
     # Normalize to 0-100 scale
     # Max theoretical: All types immune (18 * 3 = 54)
     # Min theoretical: All types weak (18 * -4 = -72)
-    # We use a practical range based on typical trainer teams (6-10 move types)
+    # We use a practical range based on typical battle teams (6-10 move types)
     # Max expected: ~30 (10 immunities/resistances), Min expected: ~-40 (10 weaknesses)
     min_score = -40
     max_score = 30
@@ -175,13 +175,13 @@ def calculate_offense_score(
     recommended_types: list[dict[str, Any]],
     pokemon_type1: str,
     pokemon_type2: str | None,
-    trainer_pokemon: list[dict[str, Any]] | None = None,
+    battle_pokemon: list[dict[str, Any]] | None = None,
 ) -> tuple[float, list[dict[str, Any]]]:
     """Calculate offense score based on learnable moves of recommended types.
 
     Includes moves that are either:
-    1. One of the top recommended types against the trainer, OR
-    2. Super-effective against any of the trainer's Pokemon
+    1. One of the top recommended types against the battle, OR
+    2. Super-effective against any of the battle's Pokemon
 
     Scoring for each qualifying move:
         type_rank_bonus = (5 - type_rank) * 2  # Rank 1-4 gives bonus 8,6,4,2 (0 for non-ranked)
@@ -195,7 +195,7 @@ def calculate_offense_score(
         recommended_types: List of dicts with type and rank.
         pokemon_type1: Pokemon's primary type.
         pokemon_type2: Pokemon's secondary type (or None).
-        trainer_pokemon: Optional list of trainer Pokemon dicts with type1, type2.
+        battle_pokemon: Optional list of battle Pokemon dicts with type1, type2.
 
     Returns:
         Tuple of (score, good_moves_list)
@@ -225,13 +225,13 @@ def calculate_offense_score(
         if move_key in seen_moves:
             continue
 
-        # Check if move qualifies: recommended type OR super-effective against trainer
+        # Check if move qualifies: recommended type OR super-effective against battle
         is_recommended = move_type in recommended_type_set
         is_super_effective = False
 
-        if trainer_pokemon and move_type in VALID_TYPES:
-            for trainer_pkmn in trainer_pokemon:
-                eff = get_effectiveness(move_type, trainer_pkmn["type1"], trainer_pkmn["type2"])
+        if battle_pokemon and move_type in VALID_TYPES:
+            for battle_pkmn in battle_pokemon:
+                eff = get_effectiveness(move_type, battle_pkmn["type1"], battle_pkmn["type2"])
                 if eff >= SUPER_EFFECTIVE_THRESHOLD:
                     is_super_effective = True
                     break
@@ -338,19 +338,19 @@ def calculate_bst_score(bst: int) -> float:
 
 def calculate_coverage(
     learnable_moves: pl.DataFrame,
-    trainer_pokemon: list[dict[str, Any]],
+    battle_pokemon: list[dict[str, Any]],
 ) -> tuple[list[str], int]:
-    """Calculate which trainer Pokemon can be hit super-effectively.
+    """Calculate which battle Pokemon can be hit super-effectively.
 
     Args:
         learnable_moves: Pokemon's learnable moves (with move_type column).
-        trainer_pokemon: List of trainer Pokemon dicts with type1, type2, pokemon_key.
+        battle_pokemon: List of battle Pokemon dicts with type1, type2, pokemon_key.
 
     Returns:
         Tuple of (covered_pokemon_keys, coverage_count)
         covered_pokemon_keys: List of pokemon_key strings that are covered
     """
-    if learnable_moves.is_empty() or not trainer_pokemon:
+    if learnable_moves.is_empty() or not battle_pokemon:
         return [], 0
 
     # Extract unique move types from learnable moves
@@ -358,10 +358,10 @@ def calculate_coverage(
 
     covered_keys: list[str] = []
 
-    for trainer_pkmn in trainer_pokemon:
-        pokemon_key = trainer_pkmn["pokemon_key"]
-        type1 = trainer_pkmn["type1"]
-        type2 = trainer_pkmn["type2"]
+    for battle_pkmn in battle_pokemon:
+        pokemon_key = battle_pkmn["pokemon_key"]
+        type1 = battle_pkmn["type1"]
+        type2 = battle_pkmn["type2"]
 
         # Check if any move type is super-effective (>=2x) against this Pokemon
         for move_type in move_types:
@@ -454,19 +454,19 @@ def _get_top_moves_string(good_moves: list[dict[str, Any]], limit: int = 5) -> s
     return ", ".join(move_names)
 
 
-def rank_pokemon_for_trainer(
-    trainer_id: int,
+def rank_pokemon_for_battle(
+    battle_id: int,
     db_path: Path | None = None,
     top_n: int = 50,
     available_pokemon: set[str] | None = None,
 ) -> pl.DataFrame:
-    """Rank all Pokemon for a trainer matchup using composite scoring.
+    """Rank all Pokemon for a battle matchup using composite scoring.
 
     Scoring weights:
         defense_score * 0.30 + offense_score * 0.40 + stat_score * 0.15 + bst_score * 0.15
 
     Args:
-        trainer_id: ID of the trainer to analyze.
+        battle_id: ID of the battle to analyze.
         db_path: Optional path to database.
         top_n: Number of top results to return (0 for all).
         available_pokemon: Optional set of Pokemon names to filter by. If provided,
@@ -478,15 +478,15 @@ def rank_pokemon_for_trainer(
         - total_score, defense_score, offense_score, stat_score, bst_score
         - immunities, resistances, weaknesses (comma-separated strings)
         - top_moves (comma-separated string)
-        - covers (comma-separated list of covered trainer Pokemon)
+        - covers (comma-separated list of covered battle Pokemon)
         - coverage_count (integer count of covered Pokemon)
     """
-    # Get trainer analysis data
-    move_types = get_trainer_move_types(trainer_id, db_path)
-    recommended_types = get_recommended_types(trainer_id, top_n=4, db_path=db_path)
-    defensive_profile = analyze_trainer_defensive_profile(trainer_id, db_path)
+    # Get battle analysis data
+    move_types = get_battle_move_types(battle_id, db_path)
+    recommended_types = get_recommended_types(battle_id, top_n=4, db_path=db_path)
+    defensive_profile = analyze_battle_defensive_profile(battle_id, db_path)
     phys_spec_rec = defensive_profile.get("recommendation", "Either works")
-    trainer_pokemon = get_trainer_pokemon_types(trainer_id, db_path)
+    battle_pokemon = get_battle_pokemon_types(battle_id, db_path)
 
     # Get all Pokemon and moves
     all_pokemon = get_all_pokemon_with_stats(db_path)
@@ -529,7 +529,7 @@ def rank_pokemon_for_trainer(
 
     # Score each Pokemon
     results: list[dict[str, Any]] = []
-    total_trainer_pokemon = len(trainer_pokemon)
+    total_battle_pokemon = len(battle_pokemon)
 
     for row in all_pokemon.iter_rows(named=True):
         pokemon_key = row["pokemon_key"]
@@ -549,7 +549,7 @@ def rank_pokemon_for_trainer(
             recommended_types,
             type1,
             type2,
-            trainer_pokemon,
+            battle_pokemon,
         )
 
         # Stat score
@@ -559,13 +559,13 @@ def rank_pokemon_for_trainer(
         bst_score = calculate_bst_score(bst)
 
         # Coverage calculation
-        covered_keys, coverage_count = calculate_coverage(pokemon_moves, trainer_pokemon)
+        covered_keys, coverage_count = calculate_coverage(pokemon_moves, battle_pokemon)
 
         # Composite score with new weights
         total_score = defense_score * 0.30 + offense_score * 0.40 + stat_score * 0.15 + bst_score * 0.15
 
         # Format coverage string
-        covers_str = f"{coverage_count}/{total_trainer_pokemon}" if coverage_count > 0 else "0"
+        covers_str = f"{coverage_count}/{total_battle_pokemon}" if coverage_count > 0 else "0"
 
         results.append(
             {
@@ -628,14 +628,14 @@ def rank_pokemon_for_trainer(
 
 def get_pokemon_moves_detail(
     pokemon_key: str,
-    trainer_id: int,
+    battle_id: int,
     db_path: Path | None = None,
 ) -> list[dict[str, Any]]:
-    """Get detailed good moves for a specific Pokemon against a trainer.
+    """Get detailed good moves for a specific Pokemon against a battle.
 
     Args:
         pokemon_key: The Pokemon's key.
-        trainer_id: ID of the trainer to analyze.
+        battle_id: ID of the battle to analyze.
         db_path: Optional path to database.
 
     Returns:
@@ -654,9 +654,9 @@ def get_pokemon_moves_detail(
 
     pokemon_type1, pokemon_type2 = result
 
-    # Get recommended types and trainer Pokemon
-    recommended_types = get_recommended_types(trainer_id, top_n=4, db_path=db_path)
-    trainer_pokemon = get_trainer_pokemon_types(trainer_id, db_path)
+    # Get recommended types and battle Pokemon
+    recommended_types = get_recommended_types(battle_id, top_n=4, db_path=db_path)
+    battle_pokemon = get_battle_pokemon_types(battle_id, db_path)
 
     # Get Pokemon's learnable moves
     all_moves = get_all_learnable_offensive_moves(db_path)
@@ -671,7 +671,7 @@ def get_pokemon_moves_detail(
         recommended_types,
         pokemon_type1,
         pokemon_type2,
-        trainer_pokemon,
+        battle_pokemon,
     )
 
     return good_moves
@@ -679,24 +679,24 @@ def get_pokemon_moves_detail(
 
 def get_coverage_detail(
     pokemon_key: str,
-    trainer_id: int,
+    battle_id: int,
     db_path: Path | None = None,
 ) -> list[dict[str, Any]]:
-    """Get detailed coverage breakdown for a Pokemon against trainer's team.
+    """Get detailed coverage breakdown for a Pokemon against battle's team.
 
     Args:
         pokemon_key: The Pokemon's key.
-        trainer_id: ID of the trainer to analyze.
+        battle_id: ID of the battle to analyze.
         db_path: Optional path to database.
 
     Returns:
-        List of dicts with coverage details per trainer Pokemon:
+        List of dicts with coverage details per battle Pokemon:
         - pokemon_key, type1, type2, is_covered, best_move_type, effectiveness
     """
-    # Get trainer's Pokemon
-    trainer_pokemon = get_trainer_pokemon_types(trainer_id, db_path)
+    # Get battle's Pokemon
+    battle_pokemon = get_battle_pokemon_types(battle_id, db_path)
 
-    if not trainer_pokemon:
+    if not battle_pokemon:
         return []
 
     # Get Pokemon's learnable moves
@@ -714,7 +714,7 @@ def get_coverage_detail(
                 "best_move_type": None,
                 "effectiveness": 1.0,
             }
-            for tp in trainer_pokemon
+            for tp in battle_pokemon
         ]
 
     # Extract unique move types
@@ -722,10 +722,10 @@ def get_coverage_detail(
 
     results: list[dict[str, Any]] = []
 
-    for trainer_pkmn in trainer_pokemon:
-        pkmn_key = trainer_pkmn["pokemon_key"]
-        type1 = trainer_pkmn["type1"]
-        type2 = trainer_pkmn["type2"]
+    for battle_pkmn in battle_pokemon:
+        pkmn_key = battle_pkmn["pokemon_key"]
+        type1 = battle_pkmn["type1"]
+        type2 = battle_pkmn["type2"]
 
         best_eff = 0.0
         best_type = None

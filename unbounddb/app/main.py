@@ -1,5 +1,5 @@
 """ABOUTME: Streamlit application for Pokemon Unbound queries.
-ABOUTME: Provides UI for browsing tables, trainer matchups, and Pokemon locations."""
+ABOUTME: Provides UI for browsing tables, battle matchups, and Pokemon locations."""
 
 import streamlit as st
 
@@ -23,35 +23,35 @@ from unbounddb.app.location_filters import LocationFilterConfig, apply_location_
 from unbounddb.app.queries import (
     get_all_pokemon_names_from_locations,
     get_available_pokemon_set,
+    get_battle_by_id,
+    get_battles_by_difficulty,
     get_difficulties,
     get_move_details,
     get_table_list,
     get_table_preview,
-    get_trainer_by_id,
-    get_trainers_by_difficulty,
     search_pokemon_locations,
 )
 from unbounddb.app.tools.defensive_suggester import (
-    analyze_trainer_defense,
+    analyze_battle_defense,
+    get_battle_move_types,
     get_neutralized_pokemon_detail,
-    get_trainer_move_types,
 )
 from unbounddb.app.tools.offensive_suggester import (
     analyze_four_type_coverage,
     analyze_single_type_offense,
+    get_battle_pokemon_types,
     get_single_type_detail,
-    get_trainer_pokemon_types,
     get_type_coverage_detail,
 )
 from unbounddb.app.tools.phys_spec_analyzer import (
-    analyze_trainer_defensive_profile,
-    analyze_trainer_offensive_profile,
+    analyze_battle_defensive_profile,
+    analyze_battle_offensive_profile,
 )
 from unbounddb.app.tools.pokemon_ranker import (
     get_coverage_detail,
     get_pokemon_moves_detail,
     get_recommended_types,
-    rank_pokemon_for_trainer,
+    rank_pokemon_for_battle,
 )
 from unbounddb.app.user_database import update_profile as _db_update_profile
 from unbounddb.progression.progression_data import (
@@ -236,7 +236,7 @@ else:
     global_filter_config = None
 
 # Main content area - 3 tabs with inline controls
-tab1, tab2, tab3 = st.tabs(["Browse", "Trainer Matchups", "Pokemon Locations"])
+tab1, tab2, tab3 = st.tabs(["Browse", "Battle Matchups", "Pokemon Locations"])
 
 # Tab 1: Browse Tables
 with tab1:
@@ -260,12 +260,12 @@ with tab1:
     else:
         st.warning("No tables found in database.")
 
-# Tab 2: Trainer Matchups (Defensive + Offensive)
+# Tab 2: Battle Matchups (Defensive + Offensive)
 with tab2:
-    # Trainer selection at top of tab
-    trainer_col1, trainer_col2, trainer_col3 = st.columns([2, 3, 1])
+    # Battle selection at top of tab
+    battle_col1, battle_col2, battle_col3 = st.columns([2, 3, 1])
 
-    with trainer_col1:
+    with battle_col1:
         # Get saved difficulty index for default selection
         difficulty_options = ["Any", *difficulties]
         default_difficulty_index = 0
@@ -282,48 +282,48 @@ with tab2:
             on_change=_save_difficulty,
         )
 
-    # Get trainers filtered by difficulty
+    # Get battles filtered by difficulty
     difficulty_filter = None if selected_difficulty == "Any" else selected_difficulty
-    trainers = get_trainers_by_difficulty(difficulty_filter)
-    trainer_options = {f"{name} (ID: {tid})": tid for tid, name in trainers}
+    battles = get_battles_by_difficulty(difficulty_filter)
+    battle_options = {f"{name} (ID: {bid})": bid for bid, name in battles}
 
-    with trainer_col2:
-        selected_trainer_str = st.selectbox(
-            "Trainer",
-            options=list(trainer_options.keys()) if trainer_options else ["No trainers found"],
+    with battle_col2:
+        selected_battle_str = st.selectbox(
+            "Battle",
+            options=list(battle_options.keys()) if battle_options else ["No battles found"],
             index=0,
-            key="def_trainer",
+            key="def_battle",
         )
 
-    with trainer_col3:
+    with battle_col3:
         st.write("")  # Spacer to align button with selectboxes
         analyze_clicked = st.button("Analyze", type="primary", key="analyze_btn")
 
     st.divider()
 
-    # Store analyzed trainer in session state so it persists across checkbox reruns
-    if analyze_clicked and selected_trainer_str in trainer_options:
-        st.session_state["analyzed_trainer_id"] = trainer_options[selected_trainer_str]
+    # Store analyzed battle in session state so it persists across checkbox reruns
+    if analyze_clicked and selected_battle_str in battle_options:
+        st.session_state["analyzed_battle_id"] = battle_options[selected_battle_str]
 
-    # Check if we have an analyzed trainer (either from this click or previous)
-    analyzed_trainer_id = st.session_state.get("analyzed_trainer_id")
+    # Check if we have an analyzed battle (either from this click or previous)
+    analyzed_battle_id = st.session_state.get("analyzed_battle_id")
 
-    if not trainers:
-        st.warning("No trainers found in the database. Please run `unbounddb build` first.")
-    elif analyzed_trainer_id is not None:
-        trainer_id = analyzed_trainer_id
-        trainer_info = get_trainer_by_id(trainer_id)
+    if not battles:
+        st.warning("No battles found in the database. Please run `unbounddb build` first.")
+    elif analyzed_battle_id is not None:
+        battle_id = analyzed_battle_id
+        battle_info = get_battle_by_id(battle_id)
 
-        if trainer_info:
-            # Display trainer header
-            difficulty_str = f" ({trainer_info['difficulty']})" if trainer_info["difficulty"] else ""
-            st.header(f"Trainer: {trainer_info['name']}{difficulty_str}")
+        if battle_info:
+            # Display battle header
+            difficulty_str = f" ({battle_info['difficulty']})" if battle_info["difficulty"] else ""
+            st.header(f"Battle: {battle_info['name']}{difficulty_str}")
 
-            # Get trainer's team info
-            pokemon_types = get_trainer_pokemon_types(trainer_id)
+            # Get battle's team info
+            pokemon_types = get_battle_pokemon_types(battle_id)
             team_names = [p["pokemon_key"] for p in pokemon_types]
             if team_names:
-                st.markdown(f"**Trainer's Team:** {', '.join(team_names)}")
+                st.markdown(f"**Team:** {', '.join(team_names)}")
 
             # Nested tabs for defensive/offensive/physical-special analysis and Pokemon ranker
             def_tab, off_tab, phys_spec_tab, ranker_tab = st.tabs(
@@ -333,15 +333,15 @@ with tab2:
             # --- DEFENSIVE ANALYSIS TAB ---
             with def_tab:
                 # Get and display move types
-                move_types = get_trainer_move_types(trainer_id)
+                move_types = get_battle_move_types(battle_id)
                 if move_types:
                     st.markdown(f"**Move Types Used:** {', '.join(move_types)} ({len(move_types)} types)")
                 else:
-                    st.warning("No offensive moves found for this trainer's team.")
+                    st.warning("No offensive moves found for this battle's team.")
                     st.stop()
 
                 # Analyze defensive types
-                analysis_df = analyze_trainer_defense(trainer_id)
+                analysis_df = analyze_battle_defense(battle_id)
 
                 if analysis_df.is_empty():
                     st.warning("Could not analyze defensive types.")
@@ -406,7 +406,7 @@ with tab2:
                                 st.write(row["weaknesses_list"])
 
                             # Get neutralized Pokemon detail
-                            detail_df = get_neutralized_pokemon_detail(trainer_id, row["type1"], type2)
+                            detail_df = get_neutralized_pokemon_detail(battle_id, row["type1"], type2)
 
                             if not detail_df.is_empty():
                                 neutralized = detail_df.filter(detail_df["is_neutralized"])
@@ -435,12 +435,12 @@ with tab2:
             # --- OFFENSIVE ANALYSIS TAB ---
             with off_tab:
                 if not pokemon_types:
-                    st.warning("No Pokemon found for this trainer's team.")
+                    st.warning("No Pokemon found for this battle's team.")
                 else:
                     # --- Individual Type Rankings ---
                     st.subheader("Individual Type Rankings")
 
-                    single_type_df = analyze_single_type_offense(trainer_id)
+                    single_type_df = analyze_single_type_offense(battle_id)
 
                     if single_type_df.is_empty():
                         st.warning("Could not analyze offensive types.")
@@ -477,7 +477,7 @@ with tab2:
                         for row in display_single_df.head(5).iter_rows(named=True):
                             atk_type = row["type"]
                             with st.expander(f"{atk_type} Details (Score: {row['score']})"):
-                                detail_df = get_single_type_detail(trainer_id, atk_type)
+                                detail_df = get_single_type_detail(battle_id, atk_type)
 
                                 if not detail_df.is_empty():
                                     for prow in detail_df.iter_rows(named=True):
@@ -492,7 +492,7 @@ with tab2:
                     st.subheader("Best 4-Type Coverage")
                     st.caption("Pokemon can learn 4 moves. These combinations maximize super-effective coverage.")
 
-                    coverage_df = analyze_four_type_coverage(trainer_id)
+                    coverage_df = analyze_four_type_coverage(battle_id)
 
                     if coverage_df.is_empty():
                         st.warning("Could not analyze type coverage.")
@@ -528,7 +528,7 @@ with tab2:
                             types_list = [t.strip() for t in types_str.split(",")]
 
                             with st.expander(f"{types_str} (Score: {row['score']})"):
-                                detail_df = get_type_coverage_detail(trainer_id, types_list)
+                                detail_df = get_type_coverage_detail(battle_id, types_list)
 
                                 if not detail_df.is_empty():
                                     covered = detail_df.filter(detail_df["is_covered"])
@@ -561,16 +561,16 @@ with tab2:
             # --- PHYSICAL/SPECIAL ANALYSIS TAB ---
             with phys_spec_tab:
                 if not pokemon_types:
-                    st.warning("No Pokemon found for this trainer's team.")
+                    st.warning("No Pokemon found for this battle's team.")
                 else:
                     # Section 1: Their Offensive Profile
                     st.subheader("Their Offensive Profile")
-                    st.caption("What type of moves does the trainer use? Should you prioritize Defense or Sp.Def?")
+                    st.caption("What type of moves does the battle use? Should you prioritize Defense or Sp.Def?")
 
-                    offensive_profile = analyze_trainer_offensive_profile(trainer_id)
+                    offensive_profile = analyze_battle_offensive_profile(battle_id)
 
                     if offensive_profile["recommendation"] == "No data available":
-                        st.warning("No move data available for this trainer's team.")
+                        st.warning("No move data available for this battle's team.")
                     else:
                         # Bar chart: Physical vs Special attacker counts
                         attacker_data = {
@@ -621,13 +621,13 @@ with tab2:
                     # Section 2: Our Offensive Strategy
                     st.subheader("Your Offensive Strategy")
                     st.caption(
-                        "What defensive stats does the trainer's team have? Should you use Physical or Special moves?"
+                        "What defensive stats does the battle's team have? Should you use Physical or Special moves?"
                     )
 
-                    defensive_profile = analyze_trainer_defensive_profile(trainer_id)
+                    defensive_profile = analyze_battle_defensive_profile(battle_id)
 
                     if defensive_profile["recommendation"] == "No data available":
-                        st.warning("No stat data available for this trainer's team.")
+                        st.warning("No stat data available for this battle's team.")
                     else:
                         # Bar chart: Defensive profile counts
                         defender_data = {
@@ -663,17 +663,17 @@ with tab2:
             # --- POKEMON RANKER TAB ---
             with ranker_tab:
                 if not pokemon_types:
-                    st.warning("No Pokemon found for this trainer's team.")
+                    st.warning("No Pokemon found for this battle's team.")
                 else:
                     st.subheader("Recommended Pokemon")
                     st.caption(
-                        "Best Pokemon to use against this trainer, ranked by defensive typing, "
+                        "Best Pokemon to use against this battle, ranked by defensive typing, "
                         "offensive moves, and stat alignment."
                     )
 
                     # Get analysis summary
-                    recommended_type_list = get_recommended_types(trainer_id)
-                    defensive_profile_ranker = analyze_trainer_defensive_profile(trainer_id)
+                    recommended_type_list = get_recommended_types(battle_id)
+                    defensive_profile_ranker = analyze_battle_defensive_profile(battle_id)
                     phys_spec_rec = defensive_profile_ranker.get("recommendation", "Either works")
 
                     # Display analysis summary
@@ -696,7 +696,7 @@ with tab2:
 
                     # Get rankings - filter by available Pokemon
                     limit = 0 if show_all_pokemon else 50
-                    rankings_df = rank_pokemon_for_trainer(trainer_id, top_n=limit, available_pokemon=available_pokemon)
+                    rankings_df = rank_pokemon_for_battle(battle_id, top_n=limit, available_pokemon=available_pokemon)
 
                     if rankings_df.is_empty():
                         st.warning("Could not rank Pokemon. Make sure move data is available.")
@@ -776,7 +776,7 @@ with tab2:
                                     st.write(f"Weaknesses: {row['weaknesses']}")
 
                                 # Coverage breakdown
-                                coverage_detail = get_coverage_detail(row["pokemon_key"], trainer_id)
+                                coverage_detail = get_coverage_detail(row["pokemon_key"], battle_id)
                                 if coverage_detail:
                                     covered_count = sum(1 for c in coverage_detail if c["is_covered"])
                                     total_count = len(coverage_detail)
@@ -796,7 +796,7 @@ with tab2:
                                             st.write(f"- ✗ {cov['pokemon_key']} ({type_str})")
 
                                 # Recommended moves detail
-                                good_moves = get_pokemon_moves_detail(row["pokemon_key"], trainer_id)
+                                good_moves = get_pokemon_moves_detail(row["pokemon_key"], battle_id)
                                 if good_moves:
                                     st.markdown("**Recommended Moves:**")
 
@@ -834,11 +834,11 @@ with tab2:
                                     st.write("No recommended moves found for this Pokemon.")
 
         else:
-            st.error("Could not load trainer information.")
+            st.error("Could not load battle information.")
     else:
         st.info(
-            "Select a difficulty and trainer above, then click 'Analyze' "
-            "to find the best defensive and offensive type combinations against that trainer's team."
+            "Select a difficulty and battle above, then click 'Analyze' "
+            "to find the best defensive and offensive type combinations against that battle's team."
         )
 
 # Tab 3: Pokemon Locations
