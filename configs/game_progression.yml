@@ -1,0 +1,180 @@
+walkthrough_url: https://www.pokemoncoders.com/wp-content/uploads/2022/04/Pokemon-Unbound-v2.0.3.2-18-January-2022-update-Walkthrough.txt
+extraction_date: '2026-02-06'
+coverage: Full main story through Champion + partial post-game
+post_game_marker: '[[POST-GAME ARC]]'
+progression:
+- trainer: null
+  trainer_key: null
+  locations:
+  - Frozen Heights (Rival's House) Post-game
+  - Route 1
+  - Bellin Town
+  - Icicle Cave
+  - Route 2
+  - Dresco Town
+  - Route 3
+  - Flower Paradise
+  - Route 4
+  - Grim Woods
+  - Cinder Volcano
+  - Route 5
+  - Crater Town (Behind a bookshelf in the PC)
+  - Valley Cave
+  - Route 6
+  - Route 7
+  - Frost Mountain
+  - Route 8
+  - Blizzard City
+  - Frozen Forest
+  - Fallshore City
+  - Fallshore City (Gym)
+  - Route 11
+  - Epidimy Town
+  - Route 10
+  - Auburn Waterway
+  - Route 9 + Autl Woods
+  - Tehl Town
+  - Tarmigan Town
+  - Route 12
+  - Dehara City
+  - Dehara City (Gym)
+  - Ruins of Void
+  - Shadow Base Post-game
+  - Route 15
+  - Route 13
+  - Route 14
+  - Lost Tunnel
+  - Great Desert
+  - Gurun Town
+  - Vivill Woods
+  - Vivill Town
+  - Route 16
+  - Antisis City
+  - Antisis City (Black Player HQ)
+  - Antisis Sewers
+  - Icy Hole
+  - Seaport City
+  - Route 18
+  - Victory Road
+  - Polder Town
+  - Safari Zone
+  - Cootes Bog
+  - Magnolia Town
+  - Crystal Peak
+  - Redwood Village
+  - Tomb of Borrius
+  - Rift Cave
+  - Redwood Forest
+  hm_unlocks: []
+- trainer: Rival Axelrod
+  trainer_key: rival_axelrod
+  locations:
+  - Route 1
+  - Bellin Town
+  - Icicle Cave
+  hm_unlocks: []
+- trainer: Rival Axelrod
+  trainer_key: rival_axelrod
+  locations:
+  - Route 2
+  - Dresco Town
+  - Route 3
+  - Flower Paradise
+  hm_unlocks: []
+- trainer: Leader Mirskle
+  trainer_key: leader_mirskle
+  locations:
+  - Route 4
+  - Grim Woods
+  - Cinder Volcano
+  - Route 5
+  - Crater Town (Behind a bookshelf in the PC)
+  - Valley Cave
+  - Route 6
+  - Route 7
+  - Frost Mountain
+  hm_unlocks:
+  - Cut
+  level_cap: 40
+- trainer: Rival Axelrod
+  trainer_key: rival_axelrod
+  locations:
+  - Route 8
+  - Blizzard City
+  - Frozen Forest
+  hm_unlocks: []
+- trainer: Leader Alice
+  trainer_key: leader_alice
+  locations:
+  - Fallshore City
+  - Route 11
+  - Epidimy Town
+  - Route 10
+  - Auburn Waterway
+  - Route 9 + Autl Woods
+  - Tehl Town
+  - Fallshore City (Gym)
+  hm_unlocks: []
+  level_cap: 50
+- trainer: Leader Mel
+  trainer_key: leader_mel
+  locations:
+  - Tarmigan Town
+  - Route 12
+  hm_unlocks: []
+- trainer: Rival Axelrod
+  trainer_key: rival_axelrod
+  locations:
+  - Dehara City
+  - Ruins of Void
+  - Shadow Base Post-game
+  - Dehara City (Gym)
+  hm_unlocks: []
+- trainer: Leader Galavan
+  trainer_key: leader_galavan
+  locations:
+  - Route 15
+  - Route 13
+  - Route 14
+  - Lost Tunnel
+  - Great Desert
+  - Gurun Town
+  - Vivill Woods
+  - Vivill Town
+  - Route 16
+  - Antisis City
+  - Antisis Sewers
+  hm_unlocks: []
+  level_cap: 75
+- trainer: Leader Big Mo
+  trainer_key: leader_big_mo
+  locations:
+  - Icy Hole
+  - Route 17
+  - Seaport City
+  - Polder Town
+  - Safari Zone
+  hm_unlocks: []
+  level_cap: 90
+- trainer: Leader Tessy
+  trainer_key: leader_tessy
+  locations:
+  - Cootes Bog
+  - Magnolia Town
+  hm_unlocks: []
+- trainer: Rival Axelrod
+  trainer_key: rival_axelrod
+  locations:
+  - Crystal Peak
+  - Magnolia Fields
+  - Redwood Village
+  hm_unlocks: []
+- trainer: Leader Benjamin
+  trainer_key: leader_benjamin
+  locations:
+  - Route 18
+  - Victory Road
+  - Tomb of Borrius
+  - Rift Cave
+  - Redwood Forest
+  hm_unlocks: []

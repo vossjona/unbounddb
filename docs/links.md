@@ -13,3 +13,6 @@
 - **Egg Moves**: https://raw.githubusercontent.com/Skeli789/Dynamic-Pokemon-Expansion/Unbound/src/Egg_Moves.c
 - **Pokedex Data** (names, height, weight): https://github.com/Skeli789/Dynamic-Pokemon-Expansion/blob/Unbound/src/Pokedex_Data_Table.c
 - **Base Stats** (Attack, Defence, etc.): https://github.com/Skeli789/Dynamic-Pokemon-Expansion/blob/Unbound/src/Base_Stats.c
+
+
+https://www.pokemoncoders.com/wp-content/uploads/2022/04/Pokemon-Unbound-v2.0.3.2-18-January-2022-update-Walkthrough.txt

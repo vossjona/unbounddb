@@ -4,7 +4,7 @@ ABOUTME: Provides fetch, build, and ui commands via Typer."""
 import asyncio
 import subprocess
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 import typer
@@ -166,6 +166,96 @@ def ui(
         console.print("\n[yellow]UI stopped.[/]")
     except subprocess.CalledProcessError as e:
         console.print(f"[red]Streamlit failed:[/] {e}")
+        raise typer.Exit(1) from None
+
+
+def _load_db_data_for_progression(
+    log: Callable[[str], None],
+) -> tuple[list[str], list[str]]:
+    """Load location and trainer names from database for progression matching.
+
+    Args:
+        log: Logging function.
+
+    Returns:
+        Tuple of (known_locations, db_trainer_names).
+    """
+    from unbounddb.app.queries import get_all_location_names, get_trainers_by_difficulty  # noqa: PLC0415
+
+    known_locations: list[str] = []
+    db_trainer_names: list[str] = []
+
+    if settings.db_path.exists():
+        log("Loading known locations and trainers from database...")
+        try:
+            known_locations = get_all_location_names()
+            log(f"  -> Loaded {len(known_locations)} locations")
+            trainers = get_trainers_by_difficulty()
+            db_trainer_names = [name for _, name in trainers]
+            log(f"  -> Loaded {len(db_trainer_names)} trainers")
+        except Exception as e:
+            log(f"[yellow]Warning: Could not load DB data:[/] {e}")
+    else:
+        log("[yellow]Database not found, skipping location/trainer matching[/]")
+
+    return known_locations, db_trainer_names
+
+
+@app.command(name="extract-progression")
+def extract_progression(
+    output: Path = typer.Option(  # noqa: B008
+        None,
+        "--output",
+        "-o",
+        help="Output YAML file path. Defaults to configs/game_progression.yml",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
+) -> None:
+    """Extract game progression data from the Pokemon Unbound walkthrough."""
+    from unbounddb.progression import (  # noqa: PLC0415
+        WALKTHROUGH_URL,
+        fetch_walkthrough,
+        parse_walkthrough,
+        save_progression_yaml,
+    )
+
+    def log(msg: str) -> None:
+        if verbose:
+            console.print(f"[blue]{msg}[/]")
+
+    # Default output path
+    output_path = output if output else settings.PROJECT_ROOT / "configs" / "game_progression.yml"
+
+    # Fetch walkthrough
+    log(f"Fetching walkthrough from {WALKTHROUGH_URL}...")
+    try:
+        content = asyncio.run(fetch_walkthrough())
+        log(f"  -> Fetched {len(content)} characters")
+    except Exception as e:
+        console.print(f"[red]Error fetching walkthrough:[/] {e}")
+        raise typer.Exit(1) from None
+
+    # Get known locations and trainers from DB
+    known_locations, db_trainer_names = _load_db_data_for_progression(log)
+
+    # Parse walkthrough and save
+    log("Parsing walkthrough for progression data...")
+    try:
+        unlocks = parse_walkthrough(content, known_locations, db_trainer_names)
+        log(f"  -> Extracted {len(unlocks)} progression entries")
+        log(f"  -> {sum(len(u.locations) for u in unlocks)} location unlocks")
+        log(f"  -> {sum(len(u.hm_unlocks) for u in unlocks)} HM unlocks")
+    except Exception as e:
+        console.print(f"[red]Error parsing walkthrough:[/] {e}")
+        raise typer.Exit(1) from None
+
+    # Save to YAML
+    log(f"Saving progression data to {output_path}...")
+    try:
+        save_progression_yaml(unlocks, output_path)
+        console.print(f"[green]Progression data saved to:[/] {output_path}")
+    except Exception as e:
+        console.print(f"[red]Error saving YAML:[/] {e}")
         raise typer.Exit(1) from None
 
 
