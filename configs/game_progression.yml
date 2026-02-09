@@ -1,73 +1,21 @@
 walkthrough_url: https://www.pokemoncoders.com/wp-content/uploads/2022/04/Pokemon-Unbound-v2.0.3.2-18-January-2022-update-Walkthrough.txt
-extraction_date: '2026-02-06'
+extraction_date: '2026-02-09'
 coverage: Full main story through Champion + partial post-game
 post_game_marker: '[[POST-GAME ARC]]'
 progression:
 - trainer: null
   trainer_key: null
+  battle_type: null
+  badge_number: 0
   locations:
   - Frozen Heights (Rival's House) Post-game
-  - Route 1
-  - Bellin Town
-  - Icicle Cave
-  - Route 2
-  - Dresco Town
-  - Route 3
-  - Flower Paradise
-  - Route 4
-  - Grim Woods
-  - Cinder Volcano
-  - Route 5
-  - Crater Town (Behind a bookshelf in the PC)
-  - Valley Cave
-  - Route 6
-  - Route 7
-  - Frost Mountain
-  - Route 8
-  - Blizzard City
-  - Frozen Forest
-  - Fallshore City
-  - Fallshore City (Gym)
-  - Route 11
-  - Epidimy Town
-  - Route 10
-  - Auburn Waterway
-  - Route 9 + Autl Woods
-  - Tehl Town
-  - Tarmigan Town
-  - Route 12
-  - Dehara City
-  - Dehara City (Gym)
-  - Ruins of Void
-  - Shadow Base Post-game
-  - Route 15
-  - Route 13
-  - Route 14
-  - Lost Tunnel
-  - Great Desert
-  - Gurun Town
-  - Vivill Woods
-  - Vivill Town
-  - Route 16
-  - Antisis City
-  - Antisis City (Black Player HQ)
-  - Antisis Sewers
-  - Icy Hole
-  - Seaport City
-  - Route 18
-  - Victory Road
-  - Polder Town
-  - Safari Zone
-  - Cootes Bog
-  - Magnolia Town
-  - Crystal Peak
-  - Redwood Village
-  - Tomb of Borrius
-  - Rift Cave
-  - Redwood Forest
   hm_unlocks: []
+  level_cap_vanilla: 15
+  level_cap_difficult: 20
 - trainer: Rival Axelrod
   trainer_key: rival_axelrod
+  battle_type: RIVAL
+  badge_number: null
   locations:
   - Route 1
   - Bellin Town
@@ -75,6 +23,8 @@ progression:
   hm_unlocks: []
 - trainer: Rival Axelrod
   trainer_key: rival_axelrod
+  battle_type: RIVAL
+  badge_number: null
   locations:
   - Route 2
   - Dresco Town
@@ -83,21 +33,58 @@ progression:
   hm_unlocks: []
 - trainer: Leader Mirskle
   trainer_key: leader_mirskle
+  battle_type: GYM
+  badge_number: 1
   locations:
   - Route 4
   - Grim Woods
   - Cinder Volcano
+  hm_unlocks: []
+  level_cap_vanilla: 22
+  level_cap_difficult: 26
+- trainer: Shadow Admin Marlon & Shadow Grunt
+  trainer_key: shadow_admin_marlon_shadow_grunt
+  battle_type: SHADOW ADMIN
+  badge_number: null
+  locations:
   - Route 5
   - Crater Town (Behind a bookshelf in the PC)
+  hm_unlocks: []
+- trainer: Black Emboar James
+  trainer_key: black_emboar_james
+  battle_type: BOSS
+  badge_number: null
+  locations: []
+  hm_unlocks: []
+- trainer: Leader Véga
+  trainer_key: leader_vega
+  battle_type: GYM
+  badge_number: 2
+  locations: []
+  hm_unlocks:
+  - Cut
+  level_cap_vanilla: 29
+  level_cap_difficult: 32
+- trainer: Shadow Admin Ivory
+  trainer_key: shadow_admin_ivory
+  battle_type: SHADOW ADMIN
+  badge_number: null
+  locations: []
+  hm_unlocks: []
+- trainer: Boss Zeph
+  trainer_key: boss_zeph
+  battle_type: SHADOW BOSS
+  badge_number: null
+  locations:
   - Valley Cave
   - Route 6
   - Route 7
   - Frost Mountain
-  hm_unlocks:
-  - Cut
-  level_cap: 40
+  hm_unlocks: []
 - trainer: Rival Axelrod
   trainer_key: rival_axelrod
+  battle_type: RIVAL
+  badge_number: null
   locations:
   - Route 8
   - Blizzard City
@@ -105,6 +92,8 @@ progression:
   hm_unlocks: []
 - trainer: Leader Alice
   trainer_key: leader_alice
+  battle_type: GYM
+  badge_number: 3
   locations:
   - Fallshore City
   - Route 11
@@ -112,26 +101,77 @@ progression:
   - Route 10
   - Auburn Waterway
   - Route 9 + Autl Woods
+  hm_unlocks:
+  - Rock Smash
+  level_cap_vanilla: 33
+  level_cap_difficult: 36
+- trainer: Terror Granbull Gruff
+  trainer_key: terror_granbull_gruff
+  battle_type: BOSS
+  badge_number: null
+  locations:
   - Tehl Town
+  hm_unlocks: []
+- trainer: Shadow Admin Ivory & Shadow Grunt
+  trainer_key: shadow_admin_ivory_shadow_grunt
+  battle_type: SHADOW ADMIN
+  badge_number: null
+  locations:
   - Fallshore City (Gym)
   hm_unlocks: []
-  level_cap: 50
 - trainer: Leader Mel
   trainer_key: leader_mel
+  battle_type: GYM
+  badge_number: 4
   locations:
   - Tarmigan Town
-  - Route 12
+  hm_unlocks:
+  - Fly
+  - Strength
+  level_cap_vanilla: 37
+  level_cap_difficult: 40
+- trainer: Shadow Admin Marlon
+  trainer_key: shadow_admin_marlon
+  battle_type: SHADOW ADMIN
+  badge_number: null
+  locations: []
   hm_unlocks: []
+- trainer: Successor Maxima
+  trainer_key: successor_maxima
+  battle_type: MEGA GYM
+  badge_number: 5
+  locations:
+  - Route 12
+  hm_unlocks:
+  - Surf
+  level_cap_vanilla: 43
+  level_cap_difficult: 45
 - trainer: Rival Axelrod
   trainer_key: rival_axelrod
+  battle_type: RIVAL
+  badge_number: null
   locations:
   - Dehara City
   - Ruins of Void
+  hm_unlocks: []
+- trainer: Light of Ruin Admin Light of Ruin Agent Véga and Light of Ruin Grunt
+  trainer_key: light_of_ruin_admin_light_of_ruin_agent_vega_and_light_of_ruin_grunt
+  battle_type: LIGHT OF RUIN ADMIN
+  badge_number: null
+  locations:
   - Shadow Base Post-game
+  hm_unlocks: []
+- trainer: Boss Zeph
+  trainer_key: boss_zeph
+  battle_type: BOSS
+  badge_number: null
+  locations:
   - Dehara City (Gym)
   hm_unlocks: []
 - trainer: Leader Galavan
   trainer_key: leader_galavan
+  battle_type: GYM
+  badge_number: 6
   locations:
   - Route 15
   - Route 13
@@ -141,40 +181,113 @@ progression:
   - Gurun Town
   - Vivill Woods
   - Vivill Town
+  hm_unlocks: []
+  level_cap_vanilla: 51
+  level_cap_difficult: 52
+- trainer: Light of Ruin Leader Aklove
+  trainer_key: light_of_ruin_leader_aklove
+  battle_type: LIGHT OF RUIN LEADER
+  badge_number: null
+  locations:
   - Route 16
   - Antisis City
   - Antisis Sewers
   hm_unlocks: []
-  level_cap: 75
+- trainer: Black Ferrothorn Boss Barbs
+  trainer_key: black_ferrothorn_boss_barbs
+  battle_type: BOSS
+  badge_number: null
+  locations:
+  - Antisis City
+  hm_unlocks: []
 - trainer: Leader Big Mo
   trainer_key: leader_big_mo
+  battle_type: GYM
+  badge_number: 7
   locations:
   - Icy Hole
   - Route 17
   - Seaport City
+  hm_unlocks:
+  - Rock Climb
+  level_cap_vanilla: 55
+  level_cap_difficult: 57
+- trainer: Burglar Swizer and Black Ferrothorn Bullo
+  trainer_key: burglar_swizer_and_black_ferrothorn_bullo
+  battle_type: BOSS
+  badge_number: null
+  locations: []
+  hm_unlocks: []
+- trainer: Science Society Scientist
+  trainer_key: science_society_scientist
+  battle_type: BOSS
+  badge_number: null
+  locations:
   - Polder Town
   - Safari Zone
   hm_unlocks: []
-  level_cap: 90
 - trainer: Leader Tessy
   trainer_key: leader_tessy
+  battle_type: GYM
+  badge_number: 8
   locations:
   - Cootes Bog
   - Magnolia Town
-  hm_unlocks: []
+  hm_unlocks:
+  - Waterfall
+  level_cap_vanilla: 60
+  level_cap_difficult: 61
 - trainer: Rival Axelrod
   trainer_key: rival_axelrod
+  battle_type: RIVAL
+  badge_number: null
   locations:
   - Crystal Peak
+  hm_unlocks: []
+- trainer: Light of Ruin Admin Ivory
+  trainer_key: light_of_ruin_admin_ivory
+  battle_type: LIGHT OF RUIN ADMIN
+  badge_number: null
+  locations: []
+  hm_unlocks: []
+- trainer: Light of Ruin Leader Aklove
+  trainer_key: light_of_ruin_leader_aklove
+  battle_type: LIGHT OF RUIN LEADER
+  badge_number: null
+  locations: []
+  hm_unlocks: []
+- trainer: Ex Shadow Admin Marlon
+  trainer_key: ex_shadow_admin_marlon
+  battle_type: EX SHADOW ADMIN
+  badge_number: null
+  locations:
   - Magnolia Fields
   - Redwood Village
   hm_unlocks: []
 - trainer: Leader Benjamin
   trainer_key: leader_benjamin
+  battle_type: GYM
+  badge_number: 9
   locations:
   - Route 18
   - Victory Road
+  hm_unlocks: []
+  level_cap_vanilla: 66
+  level_cap_difficult: 75
+- trainer: Champion Pokémon Trainer Jax
+  trainer_key: champion_pokemon_trainer_jax
+  battle_type: BORRIUS LEAGUE CHAMPIONSHIP
+  badge_number: null
+  locations:
   - Tomb of Borrius
+  hm_unlocks: []
+post_game:
+- trainer: Light of Ruin Leader Aklove
+  trainer_key: light_of_ruin_leader_aklove
+  battle_type: LIGHT OF RUIN LEADER
+  badge_number: null
+  locations:
   - Rift Cave
   - Redwood Forest
-  hm_unlocks: []
+  hm_unlocks:
+  - Dive

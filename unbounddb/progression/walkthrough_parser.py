@@ -178,6 +178,8 @@ async def fetch_walkthrough(url: str = WALKTHROUGH_URL) -> str:
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.get(url)
         response.raise_for_status()
+        # Server sends text/plain without charset; actual encoding is Latin-1
+        response.encoding = "latin-1"
         return response.text
 
 
