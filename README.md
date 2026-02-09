@@ -20,8 +20,8 @@ The database is built on-demand from raw source files:
 
 1. C source files (`Base_Stats.c`, `Learnsets.c`) are parsed with regex
 2. Data is normalized into Polars DataFrames and written as Parquet files
-3. Parquet files are loaded into a DuckDB database
-4. Streamlit serves the UI with live queries against DuckDB
+3. Parquet files are loaded into a SQLite database
+4. Streamlit serves the UI with live queries against SQLite
 
 On Streamlit Cloud, the database builds automatically on first load (~30 seconds). Locally, you can build it manually or let the app auto-build.
 
@@ -71,7 +71,7 @@ make unittests    # Pytest unit tests
 
 ## Tech Stack
 
-- **Data**: [Polars](https://pola.rs/) + [DuckDB](https://duckdb.org/) + [PyArrow](https://arrow.apache.org/docs/python/)
+- **Data**: [Polars](https://pola.rs/) + [SQLite](https://sqlite.org/) + [PyArrow](https://arrow.apache.org/docs/python/)
 - **UI**: [Streamlit](https://streamlit.io/)
 - **Parsing**: Regex-based C struct parser
 - **Config**: [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)

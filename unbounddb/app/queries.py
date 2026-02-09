@@ -1,13 +1,13 @@
-"""ABOUTME: DuckDB query functions for the Streamlit UI.
-ABOUTME: Provides type/move search and data retrieval helpers."""
+# ABOUTME: SQLite query functions for the Streamlit UI.
+# ABOUTME: Provides type/move search and data retrieval helpers.
 
+import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import duckdb
 import polars as pl
 
-from unbounddb.build.database import get_connection
+from unbounddb.build.database import fetchall_to_polars, get_connection
 from unbounddb.build.normalize import slugify
 from unbounddb.settings import settings
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from unbounddb.app.location_filters import LocationFilterConfig
 
 
-def _get_conn(db_path: Path | None = None) -> duckdb.DuckDBPyConnection:
+def _get_conn(db_path: Path | None = None) -> sqlite3.Connection:
     """Get database connection with fallback to settings."""
     if db_path is None:
         db_path = settings.db_path
@@ -35,8 +35,8 @@ def get_available_types(db_path: Path | None = None) -> list[str]:
 
     # Try to find a type column in pokemon table
     try:
-        columns = conn.execute("DESCRIBE pokemon").fetchall()
-        col_names = [c[0].lower() for c in columns]
+        columns = conn.execute("PRAGMA table_info('pokemon')").fetchall()
+        col_names = [c[1].lower() for c in columns]
 
         # Look for type columns
         type_cols = [c for c in col_names if "type" in c.lower()]
@@ -71,8 +71,8 @@ def get_available_moves(db_path: Path | None = None) -> list[str]:
     conn = _get_conn(db_path)
 
     try:
-        columns = conn.execute("DESCRIBE moves").fetchall()
-        col_names = [c[0].lower() for c in columns]
+        columns = conn.execute("PRAGMA table_info('moves')").fetchall()
+        col_names = [c[1].lower() for c in columns]
 
         # Look for name column
         name_candidates = ["name", "move", "move_name"]
@@ -117,12 +117,12 @@ def search_pokemon_by_type_and_move(
 
     try:
         # Get pokemon table columns to find type column
-        pokemon_cols = conn.execute("DESCRIBE pokemon").fetchall()
-        pokemon_col_names = [c[0] for c in pokemon_cols]
+        pokemon_cols = conn.execute("PRAGMA table_info('pokemon')").fetchall()
+        pokemon_col_names = [c[1] for c in pokemon_cols]
         type_cols = [c for c in pokemon_col_names if "type" in c.lower()]
 
         # Build query dynamically based on available tables and filters
-        tables_available = [t[0] for t in conn.execute("SHOW TABLES").fetchall()]
+        tables_available = [t[0] for t in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
 
         # Start with base pokemon select
         # Column names come from schema introspection, not user input
@@ -155,7 +155,8 @@ def search_pokemon_by_type_and_move(
             if name_cols:
                 query += f" ORDER BY p.{name_cols[0]}"
 
-        result = conn.execute(query, params).pl()
+        cursor = conn.execute(query, params)
+        result = fetchall_to_polars(cursor)
         conn.close()
         return result
 
@@ -180,9 +181,10 @@ def get_table_preview(table_name: str, limit: int | None = 100, db_path: Path | 
     try:
         # Table name comes from get_table_list() which queries the schema
         if limit is None:
-            result = conn.execute(f"SELECT * FROM {table_name}").pl()  # noqa: S608
+            cursor = conn.execute(f"SELECT * FROM {table_name}")  # noqa: S608
         else:
-            result = conn.execute(f"SELECT * FROM {table_name} LIMIT ?", [limit]).pl()  # noqa: S608
+            cursor = conn.execute(f"SELECT * FROM {table_name} LIMIT ?", [limit])  # noqa: S608
+        result = fetchall_to_polars(cursor)
         conn.close()
         return result
     except Exception as e:
@@ -202,7 +204,7 @@ def get_table_list(db_path: Path | None = None) -> list[str]:
     conn = _get_conn(db_path)
 
     try:
-        tables = conn.execute("SHOW TABLES").fetchall()
+        tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         conn.close()
         return [t[0] for t in tables]
     except Exception:
@@ -323,7 +325,8 @@ def get_battle_team_with_moves(battle_id: int, db_path: Path | None = None) -> p
     """
 
     try:
-        result = conn.execute(query, [battle_id]).pl()
+        cursor = conn.execute(query, [battle_id])
+        result = fetchall_to_polars(cursor)
         conn.close()
         return result
     except Exception as e:
@@ -424,8 +427,8 @@ def get_all_evolutions(
             WHERE LOWER(from_pokemon) = LOWER(?)
             AND (
                 method != 'Level'
-                OR TRY_CAST(condition AS INTEGER) IS NULL
-                OR TRY_CAST(condition AS INTEGER) <= ?
+                OR CASE WHEN condition GLOB '[0-9]*' THEN CAST(condition AS INTEGER) ELSE NULL END IS NULL
+                OR CASE WHEN condition GLOB '[0-9]*' THEN CAST(condition AS INTEGER) ELSE NULL END <= ?
             )
 
             UNION ALL
@@ -435,8 +438,8 @@ def get_all_evolutions(
             JOIN evos ev ON LOWER(e.from_pokemon) = LOWER(ev.to_pokemon)
             WHERE (
                 e.method != 'Level'
-                OR TRY_CAST(e.condition AS INTEGER) IS NULL
-                OR TRY_CAST(e.condition AS INTEGER) <= ?
+                OR CASE WHEN e.condition GLOB '[0-9]*' THEN CAST(e.condition AS INTEGER) ELSE NULL END IS NULL
+                OR CASE WHEN e.condition GLOB '[0-9]*' THEN CAST(e.condition AS INTEGER) ELSE NULL END <= ?
             )
         )
         SELECT DISTINCT to_pokemon FROM evos
@@ -486,10 +489,11 @@ def get_first_blocked_evolution(
         FROM evolutions e
         JOIN chain c ON LOWER(e.to_pokemon) = LOWER(c.from_pokemon)
     )
-    SELECT from_pokemon, to_pokemon, TRY_CAST(condition AS INTEGER) as level
+    SELECT from_pokemon, to_pokemon,
+           CASE WHEN condition GLOB '[0-9]*' THEN CAST(condition AS INTEGER) ELSE NULL END as level
     FROM chain
     WHERE method = 'Level'
-      AND TRY_CAST(condition AS INTEGER) > ?
+      AND CASE WHEN condition GLOB '[0-9]*' THEN CAST(condition AS INTEGER) ELSE NULL END > ?
     ORDER BY depth DESC
     LIMIT 1
     """
@@ -536,9 +540,10 @@ def get_available_pokemon_set(
 
     # Get all locations from DB
     try:
-        all_locations = conn.execute(
+        cursor = conn.execute(
             "SELECT pokemon, location_name, encounter_method, encounter_notes, requirement FROM locations"
-        ).pl()
+        )
+        all_locations = fetchall_to_polars(cursor)
         conn.close()
     except Exception:
         conn.close()
@@ -665,7 +670,8 @@ def search_pokemon_locations(pokemon_name: str, db_path: Path | None = None) -> 
             ORDER BY pokemon, location_name, encounter_method
         """  # noqa: S608
 
-        result = conn.execute(query, all_pokemon).pl()
+        cursor = conn.execute(query, all_pokemon)
+        result = fetchall_to_polars(cursor)
         conn.close()
         return result
     except Exception as e:
@@ -781,7 +787,7 @@ def get_pokemon_by_type(
     conn = _get_conn(db_path)
 
     try:
-        result = conn.execute(
+        cursor = conn.execute(
             """
             SELECT name, type1, type2, bst, pokemon_key
             FROM pokemon
@@ -789,7 +795,8 @@ def get_pokemon_by_type(
             ORDER BY bst DESC
             """,
             [type_name, type_name],
-        ).pl()
+        )
+        result = fetchall_to_polars(cursor)
         conn.close()
 
         # Filter by available Pokemon if provided
@@ -816,7 +823,7 @@ def get_pokemon_learnset(pokemon_key: str, db_path: Path | None = None) -> pl.Da
     conn = _get_conn(db_path)
 
     try:
-        result = conn.execute(
+        cursor = conn.execute(
             """
             SELECT
                 m.name AS move_name,
@@ -831,7 +838,8 @@ def get_pokemon_learnset(pokemon_key: str, db_path: Path | None = None) -> pl.Da
             ORDER BY pm.learn_method, pm.level, m.name
             """,
             [pokemon_key],
-        ).pl()
+        )
+        result = fetchall_to_polars(cursor)
         conn.close()
         return result
     except Exception as e:

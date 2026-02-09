@@ -7,13 +7,13 @@ This file provides project-specific guidance for the UnboundDB codebase.
 UnboundDB is a data pipeline and query tool for Pokemon Unbound game data. It:
 1. Fetches Pokemon data from GitHub C source files (Dynamic Pokemon Expansion repo)
 2. Parses C structs to extract stats, types, abilities, and learnsets
-3. Normalizes data and loads into DuckDB via Polars/Parquet
+3. Normalizes data and loads into SQLite via Polars/Parquet
 4. Exposes a Streamlit UI for querying Pokemon by type and move
 
 ### Data Flow
 
 ```
-GitHub C Files → C Parser → Polars DataFrame → Parquet → DuckDB → Streamlit UI
+GitHub C Files → C Parser → Polars DataFrame → Parquet → SQLite → Streamlit UI
 ```
 
 ### Key Components
@@ -22,10 +22,10 @@ GitHub C Files → C Parser → Polars DataFrame → Parquet → DuckDB → Stre
 |--------|---------|
 | `unbounddb/ingestion/c_parser.py` | Parses Base_Stats.c and Learnsets.c |
 | `unbounddb/ingestion/fetcher.py` | Fetches from GitHub raw URLs |
-| `unbounddb/build/pipeline.py` | Orchestrates CSV/C → Parquet → DuckDB |
+| `unbounddb/build/pipeline.py` | Orchestrates CSV/C → Parquet → SQLite |
 | `unbounddb/build/normalize.py` | `slugify()` for generating join keys |
 | `unbounddb/app/main.py` | Streamlit UI |
-| `unbounddb/app/queries.py` | DuckDB query functions |
+| `unbounddb/app/queries.py` | SQLite query functions |
 | `unbounddb/cli.py` | Typer CLI entry point |
 
 ## CLI Commands
@@ -34,7 +34,7 @@ GitHub C Files → C Parser → Polars DataFrame → Parquet → DuckDB → Stre
 # Fetch data from GitHub C source files
 unbounddb fetch --github --verbose
 
-# Build DuckDB database from fetched files
+# Build SQLite database from fetched files
 unbounddb build --github --verbose
 
 # Launch Streamlit UI
@@ -51,7 +51,7 @@ See `docs/links.md` for all data source URLs.
 
 ## Database Schema
 
-Three tables in DuckDB:
+Three tables in SQLite:
 
 **pokemon**: name, hp, attack, defense, sp_attack, sp_defense, speed, bst, type1, type2, ability1, ability2, hidden_ability, pokemon_key
 
@@ -113,11 +113,14 @@ df = df.with_columns(
 )
 ```
 
-### DuckDB Queries
+### SQLite Queries
 
 Use parameterized queries for user input:
 ```python
-result = conn.execute("SELECT * FROM pokemon WHERE type1 = ?", [pokemon_type]).pl()
+from unbounddb.build.database import fetchall_to_polars
+
+cursor = conn.execute("SELECT * FROM pokemon WHERE type1 = ?", [pokemon_type])
+result = fetchall_to_polars(cursor)
 ```
 
 Column names from schema introspection are safe to use in f-strings (add `# noqa: S608`).
@@ -152,7 +155,7 @@ Or use pre-commit: `pre-commit run`
 Uses `pydantic_settings.BaseSettings` with computed properties:
 - `settings.raw_github_dir` → `data/raw/github/`
 - `settings.curated_dir` → `data/curated/`
-- `settings.db_path` → `data/db/unbound.duckdb`
+- `settings.db_path` → `data/db/unbound.sqlite`
 
 ### GitHub Sources (configs/github_sources.yml)
 

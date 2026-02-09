@@ -1,10 +1,9 @@
-# ABOUTME: DuckDB operations for user profile storage.
+# ABOUTME: SQLite operations for user profile storage.
 # ABOUTME: Provides CRUD functions for profiles with progression step and difficulty settings.
 
+import sqlite3
 from pathlib import Path
 from typing import Any
-
-import duckdb
 
 from unbounddb.settings import settings
 
@@ -25,7 +24,7 @@ def _get_user_db_path() -> Path:
     return settings.user_db_path
 
 
-def get_user_connection(db_path: Path | None = None) -> duckdb.DuckDBPyConnection:
+def get_user_connection(db_path: Path | None = None) -> sqlite3.Connection:
     """Get a writable connection to the user data database.
 
     Creates the database and schema if they don't exist.
@@ -34,24 +33,25 @@ def get_user_connection(db_path: Path | None = None) -> duckdb.DuckDBPyConnectio
         db_path: Optional path to database. Defaults to settings.user_db_path.
 
     Returns:
-        DuckDB connection (writable).
+        SQLite connection (writable).
     """
     if db_path is None:
         db_path = _get_user_db_path()
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = duckdb.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path))
     ensure_schema(conn)
     return conn
 
 
-def ensure_schema(conn: duckdb.DuckDBPyConnection) -> None:
+def ensure_schema(conn: sqlite3.Connection) -> None:
     """Create the profiles table if it doesn't exist, migrating from old schema if needed.
 
     Args:
-        conn: Active DuckDB connection.
+        conn: Active SQLite connection.
     """
     conn.execute(_PROFILES_SCHEMA)
+    conn.commit()
 
     # Migrate: if old schema detected (has has_surf but no progression_step), recreate
     columns = conn.execute("PRAGMA table_info('profiles')").fetchall()
@@ -59,6 +59,7 @@ def ensure_schema(conn: duckdb.DuckDBPyConnection) -> None:
     if "progression_step" not in col_names:
         conn.execute("DROP TABLE profiles")
         conn.execute(_PROFILES_SCHEMA)
+        conn.commit()
 
 
 def list_profiles(db_path: Path | None = None) -> list[str]:
@@ -103,7 +104,7 @@ def get_profile(name: str, db_path: Path | None = None) -> dict[str, Any] | None
 
         return {
             "name": result[0],
-            "active": result[1],
+            "active": bool(result[1]),
             "difficulty": result[2],
             "progression_step": result[3],
             "rod_level": result[4],
@@ -127,12 +128,13 @@ def create_profile(name: str, db_path: Path | None = None) -> bool:
         conn.execute(
             """
             INSERT INTO profiles (name, active, progression_step, rod_level)
-            VALUES (?, FALSE, 0, 'None')
+            VALUES (?, 0, 0, 'None')
             """,
             [name],
         )
+        conn.commit()
         return True
-    except duckdb.ConstraintException:
+    except sqlite3.IntegrityError:
         return False
     finally:
         conn.close()
@@ -171,13 +173,12 @@ def update_profile(name: str, db_path: Path | None = None, **fields: object) -> 
         set_clause = ", ".join(set_parts)
         values = [*list(updates.values()), name]
 
-        result = conn.execute(
+        cursor = conn.execute(
             f"UPDATE profiles SET {set_clause} WHERE name = ?",  # noqa: S608
             values,
         )
-        # DuckDB returns affected row count via fetchall(), not rowcount
-        count_result = result.fetchone()
-        return count_result is not None and count_result[0] > 0
+        conn.commit()
+        return cursor.rowcount > 0
     finally:
         conn.close()
 
@@ -194,10 +195,9 @@ def delete_profile(name: str, db_path: Path | None = None) -> bool:
     """
     conn = get_user_connection(db_path)
     try:
-        result = conn.execute("DELETE FROM profiles WHERE name = ?", [name])
-        # DuckDB returns affected row count via fetchall(), not rowcount
-        count_result = result.fetchone()
-        return count_result is not None and count_result[0] > 0
+        cursor = conn.execute("DELETE FROM profiles WHERE name = ?", [name])
+        conn.commit()
+        return cursor.rowcount > 0
     finally:
         conn.close()
 
@@ -213,7 +213,7 @@ def get_active_profile(db_path: Path | None = None) -> str | None:
     """
     conn = get_user_connection(db_path)
     try:
-        result = conn.execute("SELECT name FROM profiles WHERE active = TRUE").fetchone()
+        result = conn.execute("SELECT name FROM profiles WHERE active = 1").fetchone()
         return result[0] if result else None
     finally:
         conn.close()
@@ -231,11 +231,13 @@ def set_active_profile(name: str | None, db_path: Path | None = None) -> None:
     conn = get_user_connection(db_path)
     try:
         # Clear all active flags first
-        conn.execute("UPDATE profiles SET active = FALSE")
+        conn.execute("UPDATE profiles SET active = 0")
 
         # Set the new active profile
         if name is not None:
-            conn.execute("UPDATE profiles SET active = TRUE WHERE name = ?", [name])
+            conn.execute("UPDATE profiles SET active = 1 WHERE name = ?", [name])
+
+        conn.commit()
     finally:
         conn.close()
 

@@ -1,9 +1,9 @@
 # ABOUTME: Unit tests for the location query functions and filter logic.
 # ABOUTME: Tests location search, Pokemon lookup, and filter application.
 
+import sqlite3
 from pathlib import Path
 
-import duckdb
 import polars as pl
 import pytest
 
@@ -343,8 +343,8 @@ class TestGetPreEvolutions:
     @pytest.fixture
     def test_db(self, tmp_path: Path) -> Path:
         """Create a test database with evolution data."""
-        db_path = tmp_path / "test.duckdb"
-        conn = duckdb.connect(str(db_path))
+        db_path = tmp_path / "test.sqlite"
+        conn = sqlite3.connect(str(db_path))
 
         # Create evolutions table with test data
         conn.execute("""
@@ -370,6 +370,7 @@ class TestGetPreEvolutions:
             ('Ivysaur', 'Venusaur', 'Level', '32', 'ivysaur', 'venusaur')
         """)
 
+        conn.commit()
         conn.close()
         return db_path
 
@@ -405,8 +406,8 @@ class TestSearchPokemonLocationsWithPreEvolutions:
     @pytest.fixture
     def test_db(self, tmp_path: Path) -> Path:
         """Create a test database with evolution and location data."""
-        db_path = tmp_path / "test.duckdb"
-        conn = duckdb.connect(str(db_path))
+        db_path = tmp_path / "test.sqlite"
+        conn = sqlite3.connect(str(db_path))
 
         # Create evolutions table
         conn.execute("""
@@ -447,6 +448,7 @@ class TestSearchPokemonLocationsWithPreEvolutions:
             ('Magikarp', 'magikarp', 'Route 1', 'old_rod', '', '')
         """)
 
+        conn.commit()
         conn.close()
         return db_path
 
@@ -483,8 +485,8 @@ class TestGetAllPokemonNamesFromLocations:
     @pytest.fixture
     def test_db(self, tmp_path: Path) -> Path:
         """Create a test database with evolution and location data."""
-        db_path = tmp_path / "test.duckdb"
-        conn = duckdb.connect(str(db_path))
+        db_path = tmp_path / "test.sqlite"
+        conn = sqlite3.connect(str(db_path))
 
         # Create evolutions table
         conn.execute("""
@@ -524,6 +526,7 @@ class TestGetAllPokemonNamesFromLocations:
             ('Magikarp', 'magikarp', 'Route 1', 'old_rod', '', '')
         """)
 
+        conn.commit()
         conn.close()
         return db_path
 
@@ -558,8 +561,8 @@ class TestGetAllEvolutions:
     @pytest.fixture
     def test_db(self, tmp_path: Path) -> Path:
         """Create a test database with evolution data."""
-        db_path = tmp_path / "test.duckdb"
-        conn = duckdb.connect(str(db_path))
+        db_path = tmp_path / "test.sqlite"
+        conn = sqlite3.connect(str(db_path))
 
         # Create evolutions table with test data
         conn.execute("""
@@ -585,6 +588,7 @@ class TestGetAllEvolutions:
             ('Ivysaur', 'Venusaur', 'Level', '32', 'ivysaur', 'venusaur')
         """)
 
+        conn.commit()
         conn.close()
         return db_path
 
@@ -627,8 +631,8 @@ class TestGetAvailablePokemonSet:
     @pytest.fixture
     def test_db(self, tmp_path: Path) -> Path:
         """Create a test database with evolution and location data."""
-        db_path = tmp_path / "test.duckdb"
-        conn = duckdb.connect(str(db_path))
+        db_path = tmp_path / "test.sqlite"
+        conn = sqlite3.connect(str(db_path))
 
         # Create evolutions table
         conn.execute("""
@@ -669,6 +673,7 @@ class TestGetAvailablePokemonSet:
             ('Tentacool', 'tentacool', 'Route 1', 'surfing', '', '')
         """)
 
+        conn.commit()
         conn.close()
         return db_path
 
@@ -729,8 +734,8 @@ class TestGetAllEvolutionsWithLevelCap:
     @pytest.fixture
     def test_db(self, tmp_path: Path) -> Path:
         """Create a test database with evolution data including levels."""
-        db_path = tmp_path / "test.duckdb"
-        conn = duckdb.connect(str(db_path))
+        db_path = tmp_path / "test.sqlite"
+        conn = sqlite3.connect(str(db_path))
 
         conn.execute("""
             CREATE TABLE evolutions (
@@ -757,6 +762,7 @@ class TestGetAllEvolutionsWithLevelCap:
             ('Ivysaur', 'Venusaur', 'Level', '32', 'ivysaur', 'venusaur')
         """)
 
+        conn.commit()
         conn.close()
         return db_path
 
@@ -806,8 +812,8 @@ class TestGetAvailablePokemonSetWithLevelCap:
     @pytest.fixture
     def test_db(self, tmp_path: Path) -> Path:
         """Create a test database with evolution and location data."""
-        db_path = tmp_path / "test.duckdb"
-        conn = duckdb.connect(str(db_path))
+        db_path = tmp_path / "test.sqlite"
+        conn = sqlite3.connect(str(db_path))
 
         conn.execute("""
             CREATE TABLE evolutions (
@@ -846,6 +852,7 @@ class TestGetAvailablePokemonSetWithLevelCap:
             ('Eevee', 'eevee', 'Route 1', 'grass', '', '')
         """)
 
+        conn.commit()
         conn.close()
         return db_path
 
@@ -889,8 +896,8 @@ class TestGetFirstBlockedEvolution:
     @pytest.fixture
     def test_db(self, tmp_path: Path) -> Path:
         """Create a test database with evolution data."""
-        db_path = tmp_path / "test.duckdb"
-        conn = duckdb.connect(str(db_path))
+        db_path = tmp_path / "test.sqlite"
+        conn = sqlite3.connect(str(db_path))
 
         conn.execute("""
             CREATE TABLE evolutions (
@@ -915,6 +922,7 @@ class TestGetFirstBlockedEvolution:
             ('Snover', 'Abomasnow', 'Level', '40', 'snover', 'abomasnow')
         """)
 
+        conn.commit()
         conn.close()
         return db_path
 

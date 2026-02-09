@@ -1,19 +1,20 @@
-"""ABOUTME: DuckDB database operations for loading and querying data.
-ABOUTME: Handles Parquet loading and index creation."""
+# ABOUTME: SQLite database operations for loading and querying data.
+# ABOUTME: Handles Parquet loading, index creation, and query result conversion.
 
+import sqlite3
 from pathlib import Path
 
-import duckdb
+import polars as pl
 
 
-def create_database(db_path: Path) -> duckdb.DuckDBPyConnection:
-    """Create or connect to a DuckDB database.
+def create_database(db_path: Path) -> sqlite3.Connection:
+    """Create or connect to a SQLite database.
 
     Args:
         db_path: Path to the database file.
 
     Returns:
-        DuckDB connection.
+        SQLite connection.
     """
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -21,42 +22,42 @@ def create_database(db_path: Path) -> duckdb.DuckDBPyConnection:
     if db_path.exists():
         db_path.unlink()
 
-    return duckdb.connect(str(db_path))
+    return sqlite3.connect(str(db_path))
 
 
 def load_parquet_to_table(
-    conn: duckdb.DuckDBPyConnection,
+    conn: sqlite3.Connection,
     parquet_path: Path,
     table_name: str,
 ) -> None:
-    """Load a Parquet file into a DuckDB table.
+    """Load a Parquet file into a SQLite table.
+
+    Reads the Parquet file with Polars, then writes to SQLite via pandas bridge.
 
     Args:
-        conn: DuckDB connection.
+        conn: SQLite connection.
         parquet_path: Path to the Parquet file.
         table_name: Name for the table in the database.
     """
-    # table_name comes from internal code, not user input
-    conn.execute(
-        f"CREATE TABLE {table_name} AS SELECT * FROM read_parquet(?)",  # noqa: S608
-        [str(parquet_path)],
-    )
+    df = pl.read_parquet(parquet_path)
+    df.to_pandas().to_sql(table_name, conn, if_exists="replace", index=False)
+    conn.commit()
 
 
-def create_indexes(conn: duckdb.DuckDBPyConnection) -> None:
+def create_indexes(conn: sqlite3.Connection) -> None:
     """Create indexes on key columns for efficient joining.
 
     Args:
-        conn: DuckDB connection with loaded tables.
+        conn: SQLite connection with loaded tables.
     """
-    tables = conn.execute("SHOW TABLES").fetchall()
+    tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     table_names = [t[0] for t in tables]
 
     # Index pokemon_key and move_key columns for efficient joins
     # table_name comes from schema introspection, not user input
     for table_name in table_names:
-        columns = conn.execute(f"DESCRIBE {table_name}").fetchall()
-        col_names = [c[0] for c in columns]
+        columns = conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()
+        col_names = [c[1] for c in columns]
 
         if "pokemon_key" in col_names:
             conn.execute(f"CREATE INDEX idx_{table_name}_pokemon_key ON {table_name}(pokemon_key)")
@@ -86,15 +87,17 @@ def create_indexes(conn: duckdb.DuckDBPyConnection) -> None:
         if "learn_method" in col_names:
             conn.execute(f"CREATE INDEX idx_{table_name}_learn_method ON {table_name}(learn_method)")
 
+    conn.commit()
 
-def get_connection(db_path: Path) -> duckdb.DuckDBPyConnection:
-    """Get a read-only connection to an existing database.
+
+def get_connection(db_path: Path) -> sqlite3.Connection:
+    """Get a connection to an existing database.
 
     Args:
         db_path: Path to the database file.
 
     Returns:
-        DuckDB connection.
+        SQLite connection.
 
     Raises:
         FileNotFoundError: If database doesn't exist.
@@ -102,4 +105,25 @@ def get_connection(db_path: Path) -> duckdb.DuckDBPyConnection:
     if not db_path.exists():
         raise FileNotFoundError(f"Database not found: {db_path}")
 
-    return duckdb.connect(str(db_path), read_only=True)
+    return sqlite3.connect(str(db_path))
+
+
+def fetchall_to_polars(cursor: sqlite3.Cursor) -> pl.DataFrame:
+    """Convert a SQLite cursor result to a Polars DataFrame.
+
+    Args:
+        cursor: Executed SQLite cursor with results.
+
+    Returns:
+        Polars DataFrame with query results.
+    """
+    if cursor.description is None:
+        return pl.DataFrame()
+
+    column_names = [desc[0] for desc in cursor.description]
+    rows = cursor.fetchall()
+
+    if not rows:
+        return pl.DataFrame({col: [] for col in column_names})
+
+    return pl.DataFrame(rows, schema=column_names, orient="row")

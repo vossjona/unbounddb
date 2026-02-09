@@ -7,6 +7,7 @@ from typing import Any
 import polars as pl
 
 from unbounddb.app.queries import _get_conn
+from unbounddb.build.database import fetchall_to_polars
 from unbounddb.utils.type_chart import (
     generate_all_type_combinations,
     get_effectiveness,
@@ -170,7 +171,8 @@ def get_battle_pokemon_with_moves(battle_id: int, db_path: Path | None = None) -
         ORDER BY tp.slot, tpm.slot
     """
 
-    result = conn.execute(query, [battle_id]).pl()
+    cursor = conn.execute(query, [battle_id])
+    result = fetchall_to_polars(cursor)
     conn.close()
 
     return result

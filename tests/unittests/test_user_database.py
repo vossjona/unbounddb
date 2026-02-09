@@ -1,4 +1,4 @@
-# ABOUTME: Tests for user_database.py DuckDB operations.
+# ABOUTME: Tests for user_database.py SQLite operations.
 # ABOUTME: Verifies CRUD operations for profile storage with progression step schema.
 
 from pathlib import Path
@@ -22,7 +22,7 @@ from unbounddb.app.user_database import (
 @pytest.fixture
 def temp_db(tmp_path: Path) -> Path:
     """Create a temporary database path."""
-    db_path = tmp_path / "db" / "test_user_data.duckdb"
+    db_path = tmp_path / "db" / "test_user_data.sqlite"
     return db_path
 
 
@@ -40,7 +40,7 @@ class TestGetUserConnection:
         """Connection creates the profiles table."""
         conn = get_user_connection(temp_db)
 
-        tables = conn.execute("SHOW TABLES").fetchall()
+        tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         table_names = [t[0] for t in tables]
 
         conn.close()

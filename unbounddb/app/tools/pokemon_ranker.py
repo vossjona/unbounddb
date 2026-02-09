@@ -10,6 +10,7 @@ from unbounddb.app.queries import _get_conn
 from unbounddb.app.tools.defensive_suggester import get_battle_move_types
 from unbounddb.app.tools.offensive_suggester import analyze_single_type_offense, get_battle_pokemon_types
 from unbounddb.app.tools.phys_spec_analyzer import analyze_battle_defensive_profile
+from unbounddb.build.database import fetchall_to_polars
 from unbounddb.utils.type_chart import (
     IMMUNITY_VALUE,
     RESISTANCE_THRESHOLD,
@@ -41,7 +42,8 @@ def get_all_pokemon_with_stats(db_path: Path | None = None) -> pl.DataFrame:
         ORDER BY name
     """
 
-    result = conn.execute(query).pl()
+    cursor = conn.execute(query)
+    result = fetchall_to_polars(cursor)
     conn.close()
 
     return result
@@ -80,7 +82,8 @@ def get_all_learnable_offensive_moves(
         ORDER BY pm.pokemon_key, m.power DESC
     """
 
-    result = conn.execute(query).pl()
+    cursor = conn.execute(query)
+    result = fetchall_to_polars(cursor)
     conn.close()
 
     # Filter out TM moves that aren't obtainable at current progression

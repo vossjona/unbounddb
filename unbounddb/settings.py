@@ -67,14 +67,14 @@ class Settings(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def db_path(self) -> Path:
-        """Path to the DuckDB database file."""
-        return self.data_dir / "db" / "unbound.duckdb"
+        """Path to the SQLite database file."""
+        return self.data_dir / "db" / "unbound.sqlite"
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def user_db_path(self) -> Path:
-        """Path to the user data DuckDB database file."""
-        return self.data_dir / "db" / "user_data.duckdb"
+        """Path to the user data SQLite database file."""
+        return self.data_dir / "db" / "user_data.sqlite"
 
     @computed_field  # type: ignore[prop-decorator]
     @property

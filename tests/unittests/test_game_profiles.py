@@ -65,7 +65,7 @@ def clean_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Create a clean temporary database and patch path + progression data."""
     db_dir = tmp_path / "db"
     db_dir.mkdir()
-    db_path = db_dir / "user_data.duckdb"
+    db_path = db_dir / "user_data.sqlite"
 
     # Patch the user_db_path function
     monkeypatch.setattr(user_database, "_get_user_db_path", lambda: db_path)

@@ -1,9 +1,9 @@
 # ABOUTME: Tests for TM availability filtering based on game progression.
 # ABOUTME: Verifies get_available_tm_move_keys with various filter configs.
 
+import sqlite3
 from pathlib import Path
 
-import duckdb
 import polars as pl
 import pytest
 
@@ -13,11 +13,11 @@ from unbounddb.app.tm_availability import get_available_tm_move_keys
 
 @pytest.fixture
 def db_with_tm_locations(tmp_path: Path) -> Path:
-    """Create a temp DuckDB with a tm_locations table."""
-    db_path = tmp_path / "test.duckdb"
-    conn = duckdb.connect(str(db_path))
+    """Create a temp SQLite DB with a tm_locations table."""
+    db_path = tmp_path / "test.sqlite"
+    conn = sqlite3.connect(str(db_path))
 
-    df = pl.DataFrame(  # noqa: F841 - used by DuckDB SQL below
+    df = pl.DataFrame(
         {
             "tm_number": [1, 2, 3, 4, 5],
             "move_name": ["Focus Punch", "Dragon Claw", "Water Pulse", "Calm Mind", "Sleep Talk"],
@@ -35,7 +35,8 @@ def db_with_tm_locations(tmp_path: Path) -> Path:
         }
     )
 
-    conn.execute("CREATE TABLE tm_locations AS SELECT * FROM df")
+    df.to_pandas().to_sql("tm_locations", conn, if_exists="replace", index=False)
+    conn.commit()
     conn.close()
     return db_path
 
@@ -50,9 +51,10 @@ class TestGetAvailableTmMoveKeys:
 
     def test_missing_table_returns_none(self, tmp_path: Path) -> None:
         """Missing tm_locations table returns None (graceful fallback)."""
-        db_path = tmp_path / "empty.duckdb"
-        conn = duckdb.connect(str(db_path))
+        db_path = tmp_path / "empty.sqlite"
+        conn = sqlite3.connect(str(db_path))
         conn.execute("CREATE TABLE pokemon (name VARCHAR)")
+        conn.commit()
         conn.close()
 
         config = LocationFilterConfig(accessible_locations=["Route 1"])

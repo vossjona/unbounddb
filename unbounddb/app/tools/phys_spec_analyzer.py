@@ -7,6 +7,7 @@ from typing import Any, cast
 import polars as pl
 
 from unbounddb.app.queries import _get_conn
+from unbounddb.build.database import fetchall_to_polars
 
 
 def get_battle_pokemon_with_stats(battle_id: int, db_path: Path | None = None) -> pl.DataFrame:
@@ -36,7 +37,8 @@ def get_battle_pokemon_with_stats(battle_id: int, db_path: Path | None = None) -
         ORDER BY tp.slot
     """
 
-    result = conn.execute(query, [battle_id]).pl()
+    cursor = conn.execute(query, [battle_id])
+    result = fetchall_to_polars(cursor)
     conn.close()
 
     return result
@@ -70,7 +72,8 @@ def get_battle_pokemon_move_categories(battle_id: int, db_path: Path | None = No
         ORDER BY tp.slot, tpm.slot
     """
 
-    result = conn.execute(query, [battle_id]).pl()
+    cursor = conn.execute(query, [battle_id])
+    result = fetchall_to_polars(cursor)
     conn.close()
 
     return result

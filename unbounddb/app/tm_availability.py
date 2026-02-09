@@ -5,6 +5,7 @@ from pathlib import Path
 
 from unbounddb.app.location_filters import LocationFilterConfig
 from unbounddb.app.queries import _get_conn
+from unbounddb.build.database import fetchall_to_polars
 
 
 def get_available_tm_move_keys(
@@ -33,14 +34,15 @@ def get_available_tm_move_keys(
     conn = _get_conn(db_path)
 
     # Check if tm_locations table exists
-    tables = conn.execute("SHOW TABLES").fetchall()
+    tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     table_names = {row[0] for row in tables}
     if "tm_locations" not in table_names:
         conn.close()
         return None
 
     query = "SELECT move_key, location, required_hms, is_post_game FROM tm_locations"
-    df = conn.execute(query).pl()
+    cursor = conn.execute(query)
+    df = fetchall_to_polars(cursor)
     conn.close()
 
     if df.is_empty():
