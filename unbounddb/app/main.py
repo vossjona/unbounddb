@@ -124,7 +124,11 @@ _progression_entries = load_progression()
 _progression_labels = get_dropdown_labels(_progression_entries)
 
 # Profile selector options: dynamic from database + "None (ignore filters)"
-profile_names = get_all_profile_names()
+try:
+    profile_names = get_all_profile_names()
+except Exception as e:
+    st.error(f"Error loading profiles: {e}")
+    profile_names = []
 PROFILE_OPTIONS = [*profile_names, "None (ignore filters)"]
 
 
@@ -176,7 +180,10 @@ def _save_difficulty() -> None:
 
 
 # Get active profile name
-active_profile_name = get_active_profile_name()
+try:
+    active_profile_name = get_active_profile_name()
+except Exception:
+    active_profile_name = None
 
 # Determine initial index for profile selector
 if active_profile_name is None:
@@ -199,21 +206,26 @@ with st.expander("Manage Profiles", expanded=False):
     new_name = st.text_input("New profile name", key="new_profile_input")
     if st.button("Create Profile", key="create_profile_btn"):
         if new_name and new_name.strip():
-            if create_new_profile(new_name.strip()):
-                st.success(f"Created profile '{new_name}'")
-                st.rerun()
-            else:
-                st.error(f"Profile '{new_name}' already exists")
+            try:
+                if create_new_profile(new_name.strip()):
+                    st.success(f"Created profile '{new_name}'")
+                    st.rerun()
+                else:
+                    st.error(f"Profile '{new_name}' already exists")
+            except Exception as e:
+                st.error(f"Error creating profile: {e}")
         else:
             st.warning("Please enter a profile name")
 
     # Delete button (only if a real profile is selected)
-    if (
-        selected_profile != "None (ignore filters)"
-        and st.button(f"Delete '{selected_profile}'", key="delete_profile_btn", type="secondary")
-        and delete_profile_by_name(selected_profile)
+    if selected_profile != "None (ignore filters)" and st.button(
+        f"Delete '{selected_profile}'", key="delete_profile_btn", type="secondary"
     ):
-        st.rerun()
+        try:
+            if delete_profile_by_name(selected_profile):
+                st.rerun()
+        except Exception as e:
+            st.error(f"Error deleting profile: {e}")
 
 # Determine if filtering is active
 filtering_active = selected_profile != "None (ignore filters)"
@@ -225,7 +237,11 @@ saved_step: int = 0
 saved_rod: str = "None"
 
 if filtering_active:
-    saved_config, saved_difficulty, saved_step, saved_rod = load_profile(selected_profile)
+    try:
+        saved_config, saved_difficulty, saved_step, saved_rod = load_profile(selected_profile)
+    except Exception as e:
+        st.error(f"Error loading profile: {e}")
+        filtering_active = False
 
 # Initialize session state from saved profile on first load (when keys don't exist)
 if filtering_active:
