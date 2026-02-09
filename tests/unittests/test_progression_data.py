@@ -1,6 +1,8 @@
 # ABOUTME: Tests for progression_data.py loading and computation functions.
 # ABOUTME: Verifies YAML parsing, dropdown labels, and filter config computation.
 
+from pathlib import Path
+
 import pytest
 
 from unbounddb.app.location_filters import LocationFilterConfig
@@ -76,7 +78,7 @@ def sample_entries() -> list[ProgressionEntry]:
 class TestLoadProgression:
     """Tests for load_progression function."""
 
-    def test_loads_from_yaml_file(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_loads_from_yaml_file(self, tmp_path: Path) -> None:
         """Loads entries from a YAML file with progression and post_game sections."""
         yaml_content = """\
 progression:
@@ -128,7 +130,7 @@ post_game:
         assert entries[2].post_game is True
         assert entries[2].hm_unlocks == ["Dive"]
 
-    def test_returns_tuple(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_returns_tuple(self, tmp_path: Path) -> None:
         """Returns a tuple (immutable) for caching."""
         yaml_content = (
             "progression:\n- trainer: null\n  trainer_key: null\n"

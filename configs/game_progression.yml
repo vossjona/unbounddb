@@ -291,3 +291,5 @@ post_game:
   - Redwood Forest
   hm_unlocks:
   - Dive
+  level_cap_vanilla: 100
+  level_cap_difficult: 100

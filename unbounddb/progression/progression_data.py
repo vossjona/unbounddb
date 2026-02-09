@@ -11,13 +11,6 @@ import yaml
 from unbounddb.app.location_filters import LocationFilterConfig
 from unbounddb.settings import settings
 
-# HMs that affect encounter filtering in location_filters.py
-_FILTER_RELEVANT_HMS: dict[str, str] = {
-    "Surf": "has_surf",
-    "Dive": "has_dive",
-    "Rock Smash": "has_rock_smash",
-}
-
 # Difficulties that use the "difficult" level cap column
 _DIFFICULT_DIFFICULTIES = frozenset({"Difficult", "Expert", "Insane"})
 

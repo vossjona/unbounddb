@@ -65,7 +65,9 @@ def delete_profile_by_name(name: str) -> bool:
     return _db_delete_profile(name)
 
 
-def load_profile(name: str | None) -> tuple[LocationFilterConfig | None, str | None]:
+def load_profile(
+    name: str | None,
+) -> tuple[LocationFilterConfig | None, str | None, int, str]:
     """Load game progress config for a specific profile.
 
     Computes LocationFilterConfig from the profile's progression_step and
@@ -75,16 +77,16 @@ def load_profile(name: str | None) -> tuple[LocationFilterConfig | None, str | N
         name: Profile name, or None to ignore filters.
 
     Returns:
-        Tuple of (LocationFilterConfig, difficulty) for the profile.
-        Returns (None, None) if name is None (signals: ignore all filters).
+        Tuple of (config, difficulty, progression_step, rod_level).
+        Returns (None, None, 0, "None") if name is None (ignore all filters).
     """
     if name is None:
-        return None, None
+        return None, None, 0, "None"
 
     data = _db_get_profile(name)
 
     if data is None:
-        return _get_default_config(), None
+        return _get_default_config(), None, 0, "None"
 
     progression_step = data.get("progression_step", 0)
     difficulty = data.get("difficulty")
@@ -92,7 +94,7 @@ def load_profile(name: str | None) -> tuple[LocationFilterConfig | None, str | N
 
     entries = load_progression()
     config = compute_filter_config(entries, progression_step, difficulty, rod_level)
-    return config, difficulty
+    return config, difficulty, progression_step, rod_level
 
 
 def save_profile_progress(

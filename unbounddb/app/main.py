@@ -53,7 +53,6 @@ from unbounddb.app.tools.pokemon_ranker import (
     get_recommended_types,
     rank_pokemon_for_trainer,
 )
-from unbounddb.app.user_database import get_profile as _get_profile_for_session
 from unbounddb.app.user_database import update_profile as _db_update_profile
 from unbounddb.progression.progression_data import (
     compute_filter_config,
@@ -112,15 +111,10 @@ def _on_profile_change() -> None:
         profile_name: str = str(selected)
         set_active_profile(profile_name)
         # Load the new profile's values and update session state
-        new_config, saved_difficulty = load_profile(profile_name)
-        if new_config:
-            # Get raw profile data for progression_step and rod_level
-            data = _get_profile_for_session(profile_name)
-            if data:
-                st.session_state["global_progression_step"] = data.get("progression_step", 0)
-                st.session_state["global_rod"] = data.get("rod_level", "None")
-            # Also set the saved difficulty
-            st.session_state["def_difficulty"] = saved_difficulty if saved_difficulty else "Any"
+        _, saved_difficulty, step, rod = load_profile(profile_name)
+        st.session_state["global_progression_step"] = step
+        st.session_state["global_rod"] = rod
+        st.session_state["def_difficulty"] = saved_difficulty if saved_difficulty else "Any"
 
 
 def _save_current_progress() -> None:
@@ -197,12 +191,7 @@ saved_step: int = 0
 saved_rod: str = "None"
 
 if filtering_active:
-    saved_config, saved_difficulty = load_profile(selected_profile)
-    # Get raw profile data for session state initialization
-    raw_data = _get_profile_for_session(selected_profile)
-    if raw_data:
-        saved_step = raw_data.get("progression_step", 0)
-        saved_rod = raw_data.get("rod_level", "None")
+    saved_config, saved_difficulty, saved_step, saved_rod = load_profile(selected_profile)
 
 # Initialize session state from saved profile on first load (when keys don't exist)
 if filtering_active:

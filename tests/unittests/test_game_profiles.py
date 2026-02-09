@@ -84,23 +84,25 @@ class TestLoadProfile:
     """Tests for load_profile function."""
 
     def test_load_profile_returns_none_tuple_for_none_input(self, clean_db: Path) -> None:
-        """Loading profile with None returns (None, None)."""
-        config, difficulty = load_profile(None)
+        """Loading profile with None returns (None, None, 0, 'None')."""
+        config, difficulty, step, rod = load_profile(None)
 
         assert config is None
         assert difficulty is None
+        assert step == 0
+        assert rod == "None"
 
     def test_load_profile_returns_config_for_named_profile(self, clean_db: Path) -> None:
         """Loading a named profile returns LocationFilterConfig."""
         create_new_profile("jonas")
-        config, _difficulty = load_profile("jonas")
+        config, _difficulty, _step, _rod = load_profile("jonas")
 
         assert isinstance(config, LocationFilterConfig)
 
     def test_load_profile_returns_default_for_new_profile(self, clean_db: Path) -> None:
         """New profile at step 0 has only step 0 locations and no HMs."""
         create_new_profile("jonas")
-        config, _difficulty = load_profile("jonas")
+        config, _difficulty, _step, _rod = load_profile("jonas")
 
         assert config is not None
         assert config.has_surf is False
@@ -115,7 +117,7 @@ class TestLoadProfile:
         create_new_profile("jonas")
         save_profile_progress("jonas", progression_step=1, rod_level="None")
 
-        config, _difficulty = load_profile("jonas")
+        config, _difficulty, _step, _rod = load_profile("jonas")
 
         assert config is not None
         assert config.has_surf is True
@@ -127,7 +129,7 @@ class TestLoadProfile:
         create_new_profile("jonas")
         save_profile_progress("jonas", progression_step=1, rod_level="None", difficulty="Expert")
 
-        config, difficulty = load_profile("jonas")
+        config, difficulty, _step, _rod = load_profile("jonas")
 
         assert config is not None
         assert config.level_cap == 26
@@ -135,7 +137,7 @@ class TestLoadProfile:
 
     def test_load_nonexistent_profile_returns_default(self, clean_db: Path) -> None:
         """Loading nonexistent profile returns default config."""
-        config, difficulty = load_profile("nonexistent")
+        config, difficulty, _step, _rod = load_profile("nonexistent")
 
         assert config is not None
         assert difficulty is None
@@ -145,10 +147,21 @@ class TestLoadProfile:
         create_new_profile("jonas")
         save_profile_progress("jonas", progression_step=0, rod_level="Good Rod")
 
-        config, _difficulty = load_profile("jonas")
+        config, _difficulty, _step, _rod = load_profile("jonas")
 
         assert config is not None
         assert config.rod_level == "Good Rod"
+
+    def test_load_profile_returns_raw_fields(self, clean_db: Path) -> None:
+        """Raw progression_step and rod_level are returned alongside config."""
+        create_new_profile("jonas")
+        save_profile_progress("jonas", progression_step=2, rod_level="Super Rod", difficulty="Expert")
+
+        _config, difficulty, step, rod = load_profile("jonas")
+
+        assert step == 2
+        assert rod == "Super Rod"
+        assert difficulty == "Expert"
 
 
 class TestSaveProfileProgress:
@@ -160,7 +173,7 @@ class TestSaveProfileProgress:
         save_profile_progress("tim", progression_step=2, rod_level="Super Rod", difficulty="Veteran")
 
         # Load and verify
-        config, loaded_difficulty = load_profile("tim")
+        config, loaded_difficulty, _step, _rod = load_profile("tim")
 
         assert config is not None
         assert config.post_game is True
@@ -176,8 +189,8 @@ class TestSaveProfileProgress:
         save_profile_progress("jonas", progression_step=1, rod_level="None")
         save_profile_progress("tim", progression_step=0, rod_level="Old Rod")
 
-        config_jonas, _ = load_profile("jonas")
-        config_tim, _ = load_profile("tim")
+        config_jonas, *_ = load_profile("jonas")
+        config_tim, *_ = load_profile("tim")
 
         assert config_jonas is not None
         assert config_jonas.has_surf is True  # step 1 has Surf
