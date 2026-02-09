@@ -452,6 +452,63 @@ def get_all_evolutions(
         return []
 
 
+def get_first_blocked_evolution(
+    pokemon_name: str,
+    level_cap: int,
+    db_path: Path | None = None,
+) -> dict[str, str | int] | None:
+    """Find the first evolution step blocked by the level cap.
+
+    Walks backward through the evolution chain from the searched Pokemon
+    and finds the step closest to the base form where method is 'Level'
+    and condition exceeds the level cap.
+
+    Args:
+        pokemon_name: The evolved Pokemon name to check (case-insensitive).
+        level_cap: The current level cap to check against.
+        db_path: Optional path to database.
+
+    Returns:
+        Dict with from_pokemon, to_pokemon, level if a blocked step exists,
+        or None if no evolution step is blocked by the level cap.
+    """
+    conn = _get_conn(db_path)
+
+    query = """
+    WITH RECURSIVE chain AS (
+        SELECT from_pokemon, to_pokemon, method, condition, 1 as depth
+        FROM evolutions
+        WHERE LOWER(to_pokemon) = LOWER(?)
+
+        UNION ALL
+
+        SELECT e.from_pokemon, e.to_pokemon, e.method, e.condition, c.depth + 1
+        FROM evolutions e
+        JOIN chain c ON LOWER(e.to_pokemon) = LOWER(c.from_pokemon)
+    )
+    SELECT from_pokemon, to_pokemon, TRY_CAST(condition AS INTEGER) as level
+    FROM chain
+    WHERE method = 'Level'
+      AND TRY_CAST(condition AS INTEGER) > ?
+    ORDER BY depth DESC
+    LIMIT 1
+    """
+
+    try:
+        result = conn.execute(query, [pokemon_name, level_cap]).fetchone()
+        conn.close()
+        if result is None:
+            return None
+        return {
+            "from_pokemon": result[0],
+            "to_pokemon": result[1],
+            "level": result[2],
+        }
+    except Exception:
+        conn.close()
+        return None
+
+
 def get_available_pokemon_set(
     filter_config: "LocationFilterConfig | None",
     db_path: Path | None = None,

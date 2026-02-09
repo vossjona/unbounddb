@@ -12,6 +12,7 @@ from unbounddb.app.queries import (
     get_all_evolutions,
     get_all_pokemon_names_from_locations,
     get_available_pokemon_set,
+    get_first_blocked_evolution,
     get_pre_evolutions,
     search_pokemon_locations,
 )
@@ -876,3 +877,93 @@ class TestGetAvailablePokemonSetWithLevelCap:
         assert "Charizard" in result
         assert "Eevee" in result
         assert "Vaporeon" in result
+
+
+class TestGetFirstBlockedEvolution:
+    """Tests for the get_first_blocked_evolution function.
+
+    Walks backward from an evolved Pokemon and finds the first evolution
+    step blocked by the level cap.
+    """
+
+    @pytest.fixture
+    def test_db(self, tmp_path: Path) -> Path:
+        """Create a test database with evolution data."""
+        db_path = tmp_path / "test.duckdb"
+        conn = duckdb.connect(str(db_path))
+
+        conn.execute("""
+            CREATE TABLE evolutions (
+                from_pokemon VARCHAR,
+                to_pokemon VARCHAR,
+                method VARCHAR,
+                condition VARCHAR,
+                from_pokemon_key VARCHAR,
+                to_pokemon_key VARCHAR
+            )
+        """)
+
+        # Charmander -16-> Charmeleon -36-> Charizard (Level evolutions)
+        # Pichu -Friendship-> Pikachu -Stone-> Raichu (Non-level evolutions)
+        # Snover -40-> Abomasnow (single Level evolution)
+        conn.execute("""
+            INSERT INTO evolutions VALUES
+            ('Charmander', 'Charmeleon', 'Level', '16', 'charmander', 'charmeleon'),
+            ('Charmeleon', 'Charizard', 'Level', '36', 'charmeleon', 'charizard'),
+            ('Pichu', 'Pikachu', 'Friendship', '', 'pichu', 'pikachu'),
+            ('Pikachu', 'Raichu', 'Stone', 'Thunder Stone', 'pikachu', 'raichu'),
+            ('Snover', 'Abomasnow', 'Level', '40', 'snover', 'abomasnow')
+        """)
+
+        conn.close()
+        return db_path
+
+    def test_blocked_evolution_returns_block_info(self, test_db: Path) -> None:
+        """Should return block info when evolution is blocked by level cap."""
+        result = get_first_blocked_evolution("Abomasnow", level_cap=36, db_path=test_db)
+
+        assert result is not None
+        assert result["from_pokemon"] == "Snover"
+        assert result["to_pokemon"] == "Abomasnow"
+        assert result["level"] == 40
+
+    def test_no_block_when_cap_high_enough(self, test_db: Path) -> None:
+        """Should return None when level cap is high enough."""
+        result = get_first_blocked_evolution("Abomasnow", level_cap=40, db_path=test_db)
+
+        assert result is None
+
+    def test_no_evolutions_returns_none(self, test_db: Path) -> None:
+        """Should return None for Pokemon with no evolutions."""
+        result = get_first_blocked_evolution("Pikachu", level_cap=10, db_path=test_db)
+
+        # Pikachu evolves from Pichu via Friendship (non-level), so no block
+        assert result is None
+
+    def test_unknown_pokemon_returns_none(self, test_db: Path) -> None:
+        """Should return None for unknown Pokemon."""
+        result = get_first_blocked_evolution("Ditto", level_cap=10, db_path=test_db)
+
+        assert result is None
+
+    def test_multi_step_chain_returns_first_blocked(self, test_db: Path) -> None:
+        """Should return the first blocked step from the base form."""
+        # Charmander -16-> Charmeleon -36-> Charizard
+        # With cap 15, Charmeleon (16) is blocked — that's closest to base
+        result = get_first_blocked_evolution("Charizard", level_cap=15, db_path=test_db)
+
+        assert result is not None
+        assert result["from_pokemon"] == "Charmander"
+        assert result["to_pokemon"] == "Charmeleon"
+        assert result["level"] == 16
+
+    def test_multi_step_chain_later_step_blocked(self, test_db: Path) -> None:
+        """When only the later step is blocked, should return that step."""
+        # Charmander -16-> Charmeleon -36-> Charizard
+        # With cap 20, only Charizard (36) is blocked
+        result = get_first_blocked_evolution("Charizard", level_cap=20, db_path=test_db)
+
+        assert result is not None
+        assert result["from_pokemon"] == "Charmeleon"
+        assert result["to_pokemon"] == "Charizard"
+        assert result["level"] == 36

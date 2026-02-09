@@ -26,6 +26,7 @@ from unbounddb.app.queries import (
     get_battle_by_id,
     get_battles_by_difficulty,
     get_difficulties,
+    get_first_blocked_evolution,
     get_move_details,
     get_table_list,
     get_table_preview,
@@ -878,11 +879,38 @@ with tab3:
             filtered_df = apply_location_filters(locations_df, global_filter_config)
 
             if filtered_df.is_empty():
-                st.warning(
-                    "No locations match the current filters. "
-                    "Try adjusting the Game Progress section at the top of the page."
-                )
+                unfiltered_pokemon = set(locations_df["pokemon"].unique().to_list())
+                if selected_pokemon not in unfiltered_pokemon:
+                    # Evolved form — pre-evos exist in DB but none pass filters
+                    pre_evo_names = ", ".join(sorted(unfiltered_pokemon))
+                    st.warning(
+                        f"{selected_pokemon} can only be obtained by evolving "
+                        f"{pre_evo_names}, which is not available in your "
+                        f"currently accessible locations."
+                    )
+                else:
+                    st.warning(
+                        f"{selected_pokemon} is not available in your currently "
+                        f"accessible locations. Try adjusting the Game Progress "
+                        f"section at the top of the page."
+                    )
             else:
+                # Show level cap warning if the searched Pokemon isn't directly catchable
+                catchable_names = set(filtered_df["pokemon"].unique().to_list())
+                if (
+                    selected_pokemon not in catchable_names
+                    and global_filter_config is not None
+                    and global_filter_config.level_cap is not None
+                ):
+                    block = get_first_blocked_evolution(selected_pokemon, global_filter_config.level_cap)
+                    if block:
+                        st.warning(
+                            f"{block['from_pokemon']} evolves into "
+                            f"{block['to_pokemon']} at Level {block['level']}, "
+                            f"but your level cap is "
+                            f"{global_filter_config.level_cap}."
+                        )
+
                 st.subheader(f"Found in {len(filtered_df)} location(s)")
 
                 # Show info popups for unique catchable Pokemon (pre-evolutions)
