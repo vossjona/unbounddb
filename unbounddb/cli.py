@@ -244,7 +244,8 @@ def extract_progression(
         unlocks = parse_walkthrough(content, known_locations, db_trainer_names)
         log(f"  -> Extracted {len(unlocks)} progression entries")
         log(f"  -> {sum(len(u.locations) for u in unlocks)} location unlocks")
-        log(f"  -> {sum(len(u.hm_unlocks) for u in unlocks)} HM unlocks")
+        badge_count = sum(1 for u in unlocks if u.badge_number is not None)
+        log(f"  -> {badge_count} badge milestones with level caps")
     except Exception as e:
         console.print(f"[red]Error parsing walkthrough:[/] {e}")
         raise typer.Exit(1) from None

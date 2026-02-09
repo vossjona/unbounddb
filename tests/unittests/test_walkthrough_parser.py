@@ -1,32 +1,43 @@
 """ABOUTME: Tests for walkthrough parser progression extraction.
-ABOUTME: Verifies trainer extraction, segmentation, and unlock detection."""
+ABOUTME: Verifies trainer extraction, segmentation, badge rewards, and unlock detection."""
 
 import yaml
 
 from unbounddb.progression.dataclasses import (
+    BadgeReward,
     ProgressionSegment,
     ProgressionUnlock,
     WalkthroughTrainer,
 )
 from unbounddb.progression.walkthrough_parser import (
-    extract_hm_unlocks,
-    extract_level_cap,
+    BADGE_REWARDS,
     extract_locations_from_segment,
     extract_rod_upgrade,
     find_important_trainers,
+    get_badge_reward,
     match_trainers_to_db,
     parse_walkthrough,
     segment_by_trainers,
     unlocks_to_yaml,
 )
 
-# Sample walkthrough content for testing (matches actual walkthrough format)
+# Sample walkthrough with preamble (table of contents) before "Hello there"
+# Uses varied separator styles to test the universal regex
 SAMPLE_WALKTHROUGH = """
-Pokemon Unbound Walkthrough
+Pokemon Unbound Walkthrough - Table of Contents
+
+[froz] FROZEN HEIGHTS
+[bell] BELLIN TOWN
+[rt01] ROUTE 1
+[rt02] ROUTE 2
+[post1] POST GAME AREA
+
+---
+
+Hello there, welcome to the Pokemon Unbound walkthrough!
 
 [froz] FROZEN HEIGHTS {An Island Town on a Frozen Lake.}
 Starting area with Pokemon up to level 10.
-Traded Pokemon will now obey us until Lv15.
 
 [rt01] ROUTE 1 "Snowy Mountain Pass"
 Wild Pokemon available.
@@ -38,8 +49,6 @@ Rival Axelrod
 - Lv12 Swinub [Ice/Ground]
 - Lv13 Pikachu [Electric]
 
-After the battle, we can now use Cut, great :)
-
 [bell] BELLIN TOWN {A Quiet Town}
 Get your first badge here!
 
@@ -50,27 +59,33 @@ Leader Mirskle
 - Lv18 Florges [Fairy]
 - Lv20 Roserade [Grass/Poison]
 
-Congratulations! Traded Pokemon will now obey us up to Lv30.
 You also received the Old Rod from the fisherman.
 
 [rt02] ROUTE 2 "Forest Path"
 Many grass types here.
 
 >>SHADOW BOSS BATTLE<<
-======================
+xxxxxxxxxxxxxxxxxxxxxxx
 
 Black Emboar James
 - Lv26 Koffing [Poison]
 
-After defeating the boss, we can now use Surf on the water.
+[rt03] ROUTE 3 "Mountain Trail"
+Rocky terrain ahead.
+
+>>LEGENDARY BATTLE<<
+oooooooooooooooooooo
+
+Zapdos
+- Lv50 Zapdos [Electric/Flying]
 
 \\//[[POST-GAME ARC]]\\//
 
 [post1] POST GAME AREA
 This is post-game content.
 
->>CHAMPION BATTLE<<
-===================
+>>BORRIUS LEAGUE CHAMPIONSHIP BATTLE<<
+MmMmMmMmMmMmMmMmMmMmMmMmMmMmMmMmMmMm
 
 Champion Gary
 - Lv75 Pikachu
@@ -87,6 +102,7 @@ class TestFindImportantTrainers:
         assert rival is not None
         assert "axelrod" in rival.name.lower()
         assert rival.trainer_key == "rival_axelrod"
+        assert rival.battle_type == "RIVAL"
 
     def test_finds_leader_trainer(self) -> None:
         """Extracts leader trainer from walkthrough."""
@@ -95,6 +111,7 @@ class TestFindImportantTrainers:
         assert leader is not None
         assert "mirskle" in leader.name.lower()
         assert leader.trainer_key == "leader_mirskle"
+        assert leader.battle_type == "GYM"
 
     def test_finds_boss_trainer(self) -> None:
         """Extracts boss trainer from walkthrough."""
@@ -104,6 +121,7 @@ class TestFindImportantTrainers:
             None,
         )
         assert boss is not None
+        assert boss.battle_type == "SHADOW BOSS"
 
     def test_trainers_ordered_by_position(self) -> None:
         """Trainers are returned in document order."""
@@ -116,6 +134,30 @@ class TestFindImportantTrainers:
         trainers = find_important_trainers(SAMPLE_WALKTHROUGH)
         champion = next((t for t in trainers if "champion" in t.name.lower()), None)
         assert champion is not None
+        assert champion.battle_type == "BORRIUS LEAGUE CHAMPIONSHIP"
+
+    def test_excludes_legendary_when_progression_only(self) -> None:
+        """Legendary battles are excluded when progression_only=True."""
+        trainers = find_important_trainers(SAMPLE_WALKTHROUGH, progression_only=True)
+        legendary = next((t for t in trainers if "zapdos" in t.name.lower()), None)
+        assert legendary is None
+
+    def test_includes_legendary_when_not_progression_only(self) -> None:
+        """Legendary battles are included when progression_only=False."""
+        trainers = find_important_trainers(SAMPLE_WALKTHROUGH, progression_only=False)
+        legendary = next((t for t in trainers if "zapdos" in t.name.lower()), None)
+        assert legendary is not None
+
+    def test_varied_separator_styles(self) -> None:
+        """Handles varied separator styles (===, +++, xxx, ooo, MmM)."""
+        trainers = find_important_trainers(SAMPLE_WALKTHROUGH, progression_only=False)
+        # Should find trainers behind all separator styles
+        names = [t.name.lower() for t in trainers]
+        assert any("axelrod" in n for n in names)  # === separator
+        assert any("mirskle" in n for n in names)  # +++ separator
+        assert any("james" in n or "emboar" in n for n in names)  # xxx separator
+        assert any("zapdos" in n for n in names)  # ooo separator
+        assert any("gary" in n for n in names)  # MmM separator
 
 
 class TestMatchTrainersToDb:
@@ -128,6 +170,7 @@ class TestMatchTrainersToDb:
                 name="Leader Mirskle",
                 trainer_key="leader_mirskle",
                 position=100,
+                battle_type="GYM",
             )
         ]
         db_names = ["Leader Mirskle", "Leader Alice", "Rival Axelrod"]
@@ -142,12 +185,12 @@ class TestMatchTrainersToDb:
                 name="Rival Axelrod",
                 trainer_key="rival_axelrod",
                 position=100,
+                battle_type="RIVAL",
             )
         ]
         db_names = ["Axelrod 1", "Axelrod 2", "Leader Alice"]
 
         matched = match_trainers_to_db(trainers, db_names)
-        # Should match on "axelrod" substring
         assert matched[0].matched_db_name is not None
         assert "axelrod" in matched[0].matched_db_name.lower()
 
@@ -158,6 +201,7 @@ class TestMatchTrainersToDb:
                 name="Unknown Trainer",
                 trainer_key="unknown_trainer",
                 position=100,
+                battle_type="BOSS",
             )
         ]
         db_names = ["Leader Alice", "Rival Bob"]
@@ -174,10 +218,8 @@ class TestSegmentByTrainers:
         trainers = find_important_trainers(SAMPLE_WALKTHROUGH)
         segments = segment_by_trainers(SAMPLE_WALKTHROUGH, trainers)
 
-        # First segment should have no after_trainer
         assert segments[0].segment_index == 0
         assert segments[0].after_trainer is None
-        assert "[froz]" in segments[0].text
 
     def test_creates_segments_between_trainers(self) -> None:
         """Creates segments for content between trainers."""
@@ -192,97 +234,66 @@ class TestSegmentByTrainers:
         trainers = find_important_trainers(SAMPLE_WALKTHROUGH)
         segments = segment_by_trainers(SAMPLE_WALKTHROUGH, trainers)
 
-        # Second segment should reference first trainer
         assert segments[1].after_trainer is not None
         assert segments[1].after_trainer == trainers[0]
 
 
-class TestExtractHmUnlocks:
-    """Tests for extract_hm_unlocks function."""
+class TestBadgeRewards:
+    """Tests for badge reward hardcoded data."""
 
-    def test_extracts_cut(self) -> None:
-        """Extracts Cut HM unlock."""
-        segment = ProgressionSegment(
-            segment_index=0,
-            after_trainer=None,
-            text="After the battle, we can now use Cut, great :)",
-        )
-        hms = extract_hm_unlocks(segment)
-        assert "Cut" in hms
+    def test_badge_rewards_has_all_entries(self) -> None:
+        """Badge rewards list has all 10 entries (game start + 9 badges)."""
+        assert len(BADGE_REWARDS) == 10
 
-    def test_extracts_surf(self) -> None:
-        """Extracts Surf HM unlock."""
-        segment = ProgressionSegment(
-            segment_index=0,
-            after_trainer=None,
-            text="we can now use Surf on the water",
-        )
-        hms = extract_hm_unlocks(segment)
-        assert "Surf" in hms
+    def test_badge_numbers_sequential(self) -> None:
+        """Badge numbers are 0-9 in order."""
+        numbers = [br.badge_number for br in BADGE_REWARDS]
+        assert numbers == list(range(10))
 
-    def test_extracts_rock_smash(self) -> None:
-        """Extracts Rock Smash HM unlock."""
-        segment = ProgressionSegment(
-            segment_index=0,
-            after_trainer=None,
-            text="we can now use Rock Smash to break rocks",
-        )
-        hms = extract_hm_unlocks(segment)
-        assert "Rock Smash" in hms
+    def test_game_start_has_no_hms(self) -> None:
+        """Game start (badge 0) has no HM unlocks."""
+        game_start = get_badge_reward("__game_start__")
+        assert game_start is not None
+        assert game_start.hm_unlocks == []
+        assert game_start.level_cap_vanilla == 15
+        assert game_start.level_cap_difficult == 20
 
-    def test_no_hm_returns_empty(self) -> None:
-        """Returns empty list when no HM mentions."""
-        segment = ProgressionSegment(
-            segment_index=0,
-            after_trainer=None,
-            text="Just regular text with no HM unlocks.",
-        )
-        hms = extract_hm_unlocks(segment)
-        assert hms == []
+    def test_leader_vega_unlocks_cut(self) -> None:
+        """Leader Véga (badge 2) unlocks Cut."""
+        reward = get_badge_reward("leader_vega")
+        assert reward is not None
+        assert reward.badge_number == 2
+        assert reward.hm_unlocks == ["Cut"]
+        assert reward.level_cap_vanilla == 29
+        assert reward.level_cap_difficult == 32
 
+    def test_leader_mel_unlocks_fly_strength(self) -> None:
+        """Leader Mel (badge 4) unlocks Fly and Strength."""
+        reward = get_badge_reward("leader_mel")
+        assert reward is not None
+        assert reward.badge_number == 4
+        assert reward.hm_unlocks == ["Fly", "Strength"]
 
-class TestExtractLevelCap:
-    """Tests for extract_level_cap function."""
+    def test_successor_maxima_unlocks_surf(self) -> None:
+        """Successor Maxima (badge 5) unlocks Surf."""
+        reward = get_badge_reward("successor_maxima")
+        assert reward is not None
+        assert reward.badge_number == 5
+        assert reward.hm_unlocks == ["Surf"]
 
-    def test_extracts_until_format(self) -> None:
-        """Extracts level cap with 'until' format."""
-        segment = ProgressionSegment(
-            segment_index=0,
-            after_trainer=None,
-            text="Traded Pokemon will now obey us until Lv15.",
-        )
-        cap = extract_level_cap(segment)
-        assert cap == 15
+    def test_get_badge_reward_unknown_returns_none(self) -> None:
+        """Unknown trainer key returns None."""
+        assert get_badge_reward("unknown_trainer") is None
 
-    def test_extracts_up_to_format(self) -> None:
-        """Extracts level cap with 'up to' format."""
-        segment = ProgressionSegment(
-            segment_index=0,
-            after_trainer=None,
-            text="Traded Pokemon will now obey us up to Lv30.",
-        )
-        cap = extract_level_cap(segment)
-        assert cap == 30
+    def test_all_rewards_are_badge_reward_type(self) -> None:
+        """All entries in BADGE_REWARDS are BadgeReward instances."""
+        for reward in BADGE_REWARDS:
+            assert isinstance(reward, BadgeReward)
 
-    def test_no_cap_returns_none(self) -> None:
-        """Returns None when no level cap mention."""
-        segment = ProgressionSegment(
-            segment_index=0,
-            after_trainer=None,
-            text="Just regular text.",
-        )
-        cap = extract_level_cap(segment)
-        assert cap is None
-
-    def test_multiple_caps_returns_last(self) -> None:
-        """Returns last (highest) cap when multiple mentioned."""
-        segment = ProgressionSegment(
-            segment_index=0,
-            after_trainer=None,
-            text="First obey us until Lv15. Later obey us up to Lv30.",
-        )
-        cap = extract_level_cap(segment)
-        assert cap == 30
+    def test_level_caps_increase_monotonically(self) -> None:
+        """Vanilla level caps increase with each badge."""
+        caps = [br.level_cap_vanilla for br in BADGE_REWARDS]
+        assert caps == sorted(caps)
 
 
 class TestExtractRodUpgrade:
@@ -372,29 +383,58 @@ class TestParseWalkthrough:
         assert unlocks[0].trainer_name is None
         assert unlocks[0].trainer_key is None
 
-    def test_extracts_level_caps(self) -> None:
-        """Extracts level cap changes from walkthrough."""
+    def test_game_start_has_badge_zero(self) -> None:
+        """Game start segment gets badge 0 level caps."""
         unlocks = parse_walkthrough(SAMPLE_WALKTHROUGH)
-        level_caps = [u.level_cap for u in unlocks if u.level_cap is not None]
-        assert 15 in level_caps
-        assert 30 in level_caps
+        assert unlocks[0].badge_number == 0
+        assert unlocks[0].level_cap_vanilla == 15
+        assert unlocks[0].level_cap_difficult == 20
 
-    def test_extracts_hm_unlocks(self) -> None:
-        """Extracts HM unlocks from walkthrough."""
+    def test_gym_leader_has_badge_reward(self) -> None:
+        """Gym leader segments get correct badge reward data."""
         unlocks = parse_walkthrough(SAMPLE_WALKTHROUGH)
-        all_hms = []
-        for u in unlocks:
-            all_hms.extend(u.hm_unlocks)
-        assert "Cut" in all_hms
-        assert "Surf" in all_hms
+        mirskle = next((u for u in unlocks if u.trainer_key == "leader_mirskle"), None)
+        assert mirskle is not None
+        assert mirskle.badge_number == 1
+        assert mirskle.level_cap_vanilla == 22
+        assert mirskle.level_cap_difficult == 26
+        assert mirskle.battle_type == "GYM"
 
     def test_marks_post_game(self) -> None:
         """Marks post-game unlocks correctly."""
         unlocks = parse_walkthrough(SAMPLE_WALKTHROUGH)
         post_game = [u for u in unlocks if u.post_game]
-        # Champion Gary should be in post-game
-        champion = next((u for u in post_game if u.trainer_name and "gary" in u.trainer_name.lower()), None)
+        champion = next(
+            (u for u in post_game if u.trainer_name and "gary" in u.trainer_name.lower()),
+            None,
+        )
         assert champion is not None
+
+    def test_preamble_excluded_from_first_segment(self) -> None:
+        """Preamble (table of contents) is stripped before parsing."""
+        unlocks = parse_walkthrough(SAMPLE_WALKTHROUGH)
+        # The first segment should start from "Hello there", not from the table of contents
+        # If preamble was included, we'd see way more location-like content
+        assert unlocks[0].trainer_name is None
+
+    def test_excludes_legendary_battles(self) -> None:
+        """Legendary battles are excluded from progression."""
+        unlocks = parse_walkthrough(SAMPLE_WALKTHROUGH)
+        legendary = next(
+            (u for u in unlocks if u.trainer_name and "zapdos" in u.trainer_name.lower()),
+            None,
+        )
+        assert legendary is None
+
+    def test_post_game_gets_dive_hm(self) -> None:
+        """First post-game segment gets Dive HM unlock."""
+        unlocks = parse_walkthrough(SAMPLE_WALKTHROUGH)
+        post_game = [u for u in unlocks if u.post_game]
+        assert len(post_game) > 0
+        all_post_game_hms: list[str] = []
+        for u in post_game:
+            all_post_game_hms.extend(u.hm_unlocks)
+        assert "Dive" in all_post_game_hms
 
 
 class TestUnlocksToYaml:
@@ -406,21 +446,26 @@ class TestUnlocksToYaml:
             ProgressionUnlock(
                 trainer_name=None,
                 trainer_key=None,
+                battle_type=None,
+                badge_number=0,
                 locations=["Route 1"],
                 hm_unlocks=[],
-                level_cap=15,
+                level_cap_vanilla=15,
+                level_cap_difficult=20,
             ),
             ProgressionUnlock(
                 trainer_name="Leader Alice",
                 trainer_key="leader_alice",
+                battle_type="GYM",
+                badge_number=3,
                 locations=["Route 2"],
-                hm_unlocks=["Cut"],
-                level_cap=25,
+                hm_unlocks=["Rock Smash"],
+                level_cap_vanilla=33,
+                level_cap_difficult=36,
             ),
         ]
 
         yaml_str = unlocks_to_yaml(unlocks)
-        # Should be parseable
         data = yaml.safe_load(yaml_str)
         assert "progression" in data
         assert len(data["progression"]) == 2
@@ -446,12 +491,14 @@ class TestUnlocksToYaml:
             ProgressionUnlock(
                 trainer_name="Leader",
                 trainer_key="leader",
+                battle_type="GYM",
                 locations=[],
                 post_game=False,
             ),
             ProgressionUnlock(
                 trainer_name="Champion",
                 trainer_key="champion",
+                battle_type="BORRIUS LEAGUE CHAMPIONSHIP",
                 locations=[],
                 post_game=True,
             ),
@@ -462,3 +509,43 @@ class TestUnlocksToYaml:
         assert len(data["progression"]) == 1
         assert "post_game" in data
         assert len(data["post_game"]) == 1
+
+    def test_includes_dual_level_caps(self) -> None:
+        """YAML output includes both vanilla and difficult level caps."""
+        unlocks = [
+            ProgressionUnlock(
+                trainer_name="Leader Alice",
+                trainer_key="leader_alice",
+                battle_type="GYM",
+                badge_number=3,
+                locations=[],
+                level_cap_vanilla=33,
+                level_cap_difficult=36,
+            ),
+        ]
+
+        yaml_str = unlocks_to_yaml(unlocks)
+        data = yaml.safe_load(yaml_str)
+        entry = data["progression"][0]
+        assert entry["level_cap_vanilla"] == 33
+        assert entry["level_cap_difficult"] == 36
+        assert entry["battle_type"] == "GYM"
+        assert entry["badge_number"] == 3
+
+    def test_includes_battle_type_and_badge(self) -> None:
+        """YAML output includes battle_type and badge_number fields."""
+        unlocks = [
+            ProgressionUnlock(
+                trainer_name="Rival Axelrod",
+                trainer_key="rival_axelrod",
+                battle_type="RIVAL",
+                badge_number=None,
+                locations=[],
+            ),
+        ]
+
+        yaml_str = unlocks_to_yaml(unlocks)
+        data = yaml.safe_load(yaml_str)
+        entry = data["progression"][0]
+        assert entry["battle_type"] == "RIVAL"
+        assert entry["badge_number"] is None

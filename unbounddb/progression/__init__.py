@@ -2,18 +2,20 @@
 ABOUTME: Parses walkthrough to extract trainer progression and location unlocks."""
 
 from unbounddb.progression.dataclasses import (
+    BadgeReward,
     ProgressionSegment,
     ProgressionUnlock,
     WalkthroughTrainer,
 )
 from unbounddb.progression.walkthrough_parser import (
+    BADGE_REWARDS,
+    PROGRESSION_BATTLE_TYPES,
     WALKTHROUGH_URL,
-    extract_hm_unlocks,
-    extract_level_cap,
     extract_locations_from_segment,
     extract_rod_upgrade,
     fetch_walkthrough,
     find_important_trainers,
+    get_badge_reward,
     match_trainers_to_db,
     parse_walkthrough,
     save_progression_yaml,
@@ -22,16 +24,18 @@ from unbounddb.progression.walkthrough_parser import (
 )
 
 __all__ = [
+    "BADGE_REWARDS",
+    "PROGRESSION_BATTLE_TYPES",
     "WALKTHROUGH_URL",
+    "BadgeReward",
     "ProgressionSegment",
     "ProgressionUnlock",
     "WalkthroughTrainer",
-    "extract_hm_unlocks",
-    "extract_level_cap",
     "extract_locations_from_segment",
     "extract_rod_upgrade",
     "fetch_walkthrough",
     "find_important_trainers",
+    "get_badge_reward",
     "match_trainers_to_db",
     "parse_walkthrough",
     "save_progression_yaml",
