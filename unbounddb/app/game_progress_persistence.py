@@ -1,5 +1,5 @@
 # ABOUTME: Persistence layer for game progress settings with multi-profile support.
-# ABOUTME: Delegates to user_database.py for DuckDB storage with dynamic profile creation.
+# ABOUTME: Delegates to user_database.py for DuckDB storage, computes filters from progression data.
 
 from unbounddb.app.location_filters import LocationFilterConfig
 from unbounddb.app.user_database import (
@@ -23,19 +23,13 @@ from unbounddb.app.user_database import (
 from unbounddb.app.user_database import (
     update_profile as _db_update_profile,
 )
+from unbounddb.progression.progression_data import compute_filter_config, load_progression
 
 
 def _get_default_config() -> LocationFilterConfig:
-    """Return fresh default config with no progress unlocked."""
-    return LocationFilterConfig(
-        has_surf=False,
-        has_dive=False,
-        rod_level="None",
-        has_rock_smash=False,
-        post_game=False,
-        accessible_locations=None,
-        level_cap=None,
-    )
+    """Return default config computed from step 0 of progression data."""
+    entries = load_progression()
+    return compute_filter_config(entries, step=0, difficulty=None)
 
 
 def get_all_profile_names() -> list[str]:
@@ -74,6 +68,9 @@ def delete_profile_by_name(name: str) -> bool:
 def load_profile(name: str | None) -> tuple[LocationFilterConfig | None, str | None]:
     """Load game progress config for a specific profile.
 
+    Computes LocationFilterConfig from the profile's progression_step and
+    difficulty using the progression YAML data.
+
     Args:
         name: Profile name, or None to ignore filters.
 
@@ -89,37 +86,33 @@ def load_profile(name: str | None) -> tuple[LocationFilterConfig | None, str | N
     if data is None:
         return _get_default_config(), None
 
-    config = LocationFilterConfig(
-        has_surf=data.get("has_surf", False),
-        has_dive=data.get("has_dive", False),
-        rod_level=data.get("rod_level", "None"),
-        has_rock_smash=data.get("has_rock_smash", False),
-        post_game=data.get("post_game", False),
-        accessible_locations=data.get("accessible_locations"),
-        level_cap=data.get("level_cap"),
-    )
+    progression_step = data.get("progression_step", 0)
     difficulty = data.get("difficulty")
+    rod_level = data.get("rod_level", "None")
 
+    entries = load_progression()
+    config = compute_filter_config(entries, progression_step, difficulty, rod_level)
     return config, difficulty
 
 
-def save_profile(name: str, config: LocationFilterConfig, difficulty: str | None = None) -> None:
-    """Save game progress config to a specific profile.
+def save_profile_progress(
+    name: str,
+    progression_step: int,
+    rod_level: str,
+    difficulty: str | None = None,
+) -> None:
+    """Save game progress fields to a profile.
 
     Args:
         name: Profile name to save to.
-        config: The LocationFilterConfig to save.
+        progression_step: Index of the last defeated trainer.
+        rod_level: Current rod level setting.
         difficulty: Optional difficulty setting to save.
     """
     _db_update_profile(
         name,
-        has_surf=config.has_surf,
-        has_dive=config.has_dive,
-        rod_level=config.rod_level,
-        has_rock_smash=config.has_rock_smash,
-        post_game=config.post_game,
-        accessible_locations=config.accessible_locations,
-        level_cap=config.level_cap,
+        progression_step=progression_step,
+        rod_level=rod_level,
         difficulty=difficulty,
     )
 
@@ -140,28 +133,3 @@ def set_active_profile(name: str | None) -> None:
         name: Profile name or None to ignore filters.
     """
     _db_set_active_profile(name)
-
-
-# Legacy functions for backwards compatibility
-def load_game_progress() -> LocationFilterConfig:
-    """Load game progress config from active profile.
-
-    Returns:
-        LocationFilterConfig with saved values, or defaults if not found.
-    """
-    active = get_active_profile_name()
-    config, _ = load_profile(active)
-    return config if config is not None else LocationFilterConfig()
-
-
-def save_game_progress(config: LocationFilterConfig) -> None:
-    """Save game progress config to active profile.
-
-    Args:
-        config: The LocationFilterConfig to save.
-    """
-    active = get_active_profile_name()
-    if active is not None:
-        # Preserve existing difficulty when saving just the config
-        _, existing_difficulty = load_profile(active)
-        save_profile(active, config, difficulty=existing_difficulty)

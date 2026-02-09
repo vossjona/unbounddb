@@ -1,7 +1,6 @@
 # ABOUTME: DuckDB operations for user profile storage.
-# ABOUTME: Provides CRUD functions for profiles with game progress and difficulty settings.
+# ABOUTME: Provides CRUD functions for profiles with progression step and difficulty settings.
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -14,14 +13,9 @@ _PROFILES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS profiles (
     name VARCHAR PRIMARY KEY,
     active BOOLEAN NOT NULL DEFAULT FALSE,
-    has_surf BOOLEAN NOT NULL DEFAULT FALSE,
-    has_dive BOOLEAN NOT NULL DEFAULT FALSE,
-    rod_level VARCHAR NOT NULL DEFAULT 'None',
-    has_rock_smash BOOLEAN NOT NULL DEFAULT FALSE,
-    post_game BOOLEAN NOT NULL DEFAULT FALSE,
-    accessible_locations VARCHAR,
-    level_cap INTEGER,
-    difficulty VARCHAR
+    difficulty VARCHAR,
+    progression_step INTEGER NOT NULL DEFAULT 0,
+    rod_level VARCHAR NOT NULL DEFAULT 'None'
 )
 """
 
@@ -52,12 +46,19 @@ def get_user_connection(db_path: Path | None = None) -> duckdb.DuckDBPyConnectio
 
 
 def ensure_schema(conn: duckdb.DuckDBPyConnection) -> None:
-    """Create the profiles table if it doesn't exist.
+    """Create the profiles table if it doesn't exist, migrating from old schema if needed.
 
     Args:
         conn: Active DuckDB connection.
     """
     conn.execute(_PROFILES_SCHEMA)
+
+    # Migrate: if old schema detected (has has_surf but no progression_step), recreate
+    columns = conn.execute("PRAGMA table_info('profiles')").fetchall()
+    col_names = {row[1] for row in columns}
+    if "progression_step" not in col_names:
+        conn.execute("DROP TABLE profiles")
+        conn.execute(_PROFILES_SCHEMA)
 
 
 def list_profiles(db_path: Path | None = None) -> list[str]:
@@ -91,8 +92,7 @@ def get_profile(name: str, db_path: Path | None = None) -> dict[str, Any] | None
     try:
         result = conn.execute(
             """
-            SELECT name, active, has_surf, has_dive, rod_level, has_rock_smash,
-                   post_game, accessible_locations, level_cap, difficulty
+            SELECT name, active, difficulty, progression_step, rod_level
             FROM profiles WHERE name = ?
             """,
             [name],
@@ -101,25 +101,12 @@ def get_profile(name: str, db_path: Path | None = None) -> dict[str, Any] | None
         if result is None:
             return None
 
-        # Parse accessible_locations from JSON string
-        accessible_locations = None
-        if result[7]:
-            try:
-                accessible_locations = json.loads(result[7])
-            except (json.JSONDecodeError, TypeError):
-                accessible_locations = None
-
         return {
             "name": result[0],
             "active": result[1],
-            "has_surf": result[2],
-            "has_dive": result[3],
+            "difficulty": result[2],
+            "progression_step": result[3],
             "rod_level": result[4],
-            "has_rock_smash": result[5],
-            "post_game": result[6],
-            "accessible_locations": accessible_locations,
-            "level_cap": result[8],
-            "difficulty": result[9],
         }
     finally:
         conn.close()
@@ -139,9 +126,8 @@ def create_profile(name: str, db_path: Path | None = None) -> bool:
     try:
         conn.execute(
             """
-            INSERT INTO profiles (name, active, has_surf, has_dive, rod_level,
-                                  has_rock_smash, post_game)
-            VALUES (?, FALSE, FALSE, FALSE, 'None', FALSE, FALSE)
+            INSERT INTO profiles (name, active, progression_step, rod_level)
+            VALUES (?, FALSE, 0, 'None')
             """,
             [name],
         )
@@ -159,8 +145,7 @@ def update_profile(name: str, db_path: Path | None = None, **fields: object) -> 
         name: Profile name to update.
         db_path: Optional path to database.
         **fields: Field names and values to update. Valid fields:
-            has_surf, has_dive, rod_level, has_rock_smash, post_game,
-            accessible_locations, level_cap, difficulty
+            difficulty, progression_step, rod_level
 
     Returns:
         True if profile was found and updated, False otherwise.
@@ -169,28 +154,15 @@ def update_profile(name: str, db_path: Path | None = None, **fields: object) -> 
         return False
 
     valid_fields = {
-        "has_surf",
-        "has_dive",
-        "rod_level",
-        "has_rock_smash",
-        "post_game",
-        "accessible_locations",
-        "level_cap",
         "difficulty",
+        "progression_step",
+        "rod_level",
     }
 
     # Filter to only valid fields
     updates = {k: v for k, v in fields.items() if k in valid_fields}
     if not updates:
         return False
-
-    # Convert accessible_locations list to JSON string
-    if "accessible_locations" in updates:
-        loc_value = updates["accessible_locations"]
-        if loc_value is not None and isinstance(loc_value, list):
-            updates["accessible_locations"] = json.dumps(loc_value)
-        elif loc_value is None:
-            updates["accessible_locations"] = None
 
     conn = get_user_connection(db_path)
     try:

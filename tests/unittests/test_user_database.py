@@ -1,5 +1,5 @@
 # ABOUTME: Tests for user_database.py DuckDB operations.
-# ABOUTME: Verifies CRUD operations for profile storage.
+# ABOUTME: Verifies CRUD operations for profile storage with progression step schema.
 
 from pathlib import Path
 
@@ -70,11 +70,9 @@ class TestCreateProfile:
         data = get_profile("jonas", temp_db)
 
         assert data is not None
-        assert data["has_surf"] is False
-        assert data["has_dive"] is False
+        assert data["progression_step"] == 0
         assert data["rod_level"] == "None"
-        assert data["has_rock_smash"] is False
-        assert data["post_game"] is False
+        assert data["difficulty"] is None
         assert data["active"] is False
 
 
@@ -110,26 +108,15 @@ class TestGetProfile:
     def test_returns_all_fields(self, temp_db: Path) -> None:
         """Returns all profile fields."""
         create_profile("jonas", temp_db)
-        update_profile("jonas", temp_db, has_surf=True, level_cap=35, difficulty="Expert")
+        update_profile("jonas", temp_db, progression_step=5, difficulty="Expert")
 
         data = get_profile("jonas", temp_db)
 
         assert data is not None
         assert data["name"] == "jonas"
-        assert data["has_surf"] is True
-        assert data["level_cap"] == 35
+        assert data["progression_step"] == 5
         assert data["difficulty"] == "Expert"
-
-    def test_accessible_locations_json_parsing(self, temp_db: Path) -> None:
-        """Accessible locations are parsed from JSON."""
-        create_profile("jonas", temp_db)
-        locations = ["Route 1", "Route 2", "City Center"]
-        update_profile("jonas", temp_db, accessible_locations=locations)
-
-        data = get_profile("jonas", temp_db)
-
-        assert data is not None
-        assert data["accessible_locations"] == locations
+        assert data["rod_level"] == "None"
 
 
 class TestUpdateProfile:
@@ -138,28 +125,28 @@ class TestUpdateProfile:
     def test_update_single_field(self, temp_db: Path) -> None:
         """Updating a single field works."""
         create_profile("jonas", temp_db)
-        update_profile("jonas", temp_db, has_surf=True)
+        update_profile("jonas", temp_db, progression_step=3)
 
         data = get_profile("jonas", temp_db)
 
         assert data is not None
-        assert data["has_surf"] is True
+        assert data["progression_step"] == 3
 
     def test_update_multiple_fields(self, temp_db: Path) -> None:
         """Updating multiple fields at once works."""
         create_profile("jonas", temp_db)
-        update_profile("jonas", temp_db, has_surf=True, has_dive=True, rod_level="Good Rod")
+        update_profile("jonas", temp_db, progression_step=10, rod_level="Good Rod", difficulty="Insane")
 
         data = get_profile("jonas", temp_db)
 
         assert data is not None
-        assert data["has_surf"] is True
-        assert data["has_dive"] is True
+        assert data["progression_step"] == 10
         assert data["rod_level"] == "Good Rod"
+        assert data["difficulty"] == "Insane"
 
     def test_update_nonexistent_profile_returns_false(self, temp_db: Path) -> None:
         """Updating nonexistent profile returns False."""
-        result = update_profile("nonexistent", temp_db, has_surf=True)
+        result = update_profile("nonexistent", temp_db, progression_step=1)
 
         assert result is False
 
@@ -170,17 +157,6 @@ class TestUpdateProfile:
         result = update_profile("jonas", temp_db, invalid_field="value")
 
         assert result is False  # No valid fields to update
-
-    def test_update_accessible_locations_none(self, temp_db: Path) -> None:
-        """Setting accessible_locations to None works."""
-        create_profile("jonas", temp_db)
-        update_profile("jonas", temp_db, accessible_locations=["Route 1"])
-        update_profile("jonas", temp_db, accessible_locations=None)
-
-        data = get_profile("jonas", temp_db)
-
-        assert data is not None
-        assert data["accessible_locations"] is None
 
 
 class TestDeleteProfile:

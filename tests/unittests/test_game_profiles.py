@@ -1,5 +1,5 @@
-# ABOUTME: Tests for multi-profile game progress persistence.
-# ABOUTME: Verifies profile loading, saving, and None config handling.
+# ABOUTME: Tests for multi-profile game progress persistence with progression computation.
+# ABOUTME: Verifies profile loading, saving, and LocationFilterConfig computation from progression data.
 
 from pathlib import Path
 
@@ -13,21 +13,69 @@ from unbounddb.app.game_progress_persistence import (
     get_active_profile_name,
     get_all_profile_names,
     load_profile,
-    save_profile,
+    save_profile_progress,
     set_active_profile,
 )
 from unbounddb.app.location_filters import LocationFilterConfig, apply_location_filters
+from unbounddb.progression.progression_data import ProgressionEntry, load_progression
+
+
+def _make_test_entries() -> tuple[ProgressionEntry, ...]:
+    """Create a small test progression for monkeypatching."""
+    return (
+        ProgressionEntry(
+            step=0,
+            trainer_name=None,
+            trainer_key=None,
+            battle_type=None,
+            badge_number=0,
+            locations=["Route 1"],
+            hm_unlocks=[],
+            level_cap_vanilla=15,
+            level_cap_difficult=20,
+            post_game=False,
+        ),
+        ProgressionEntry(
+            step=1,
+            trainer_name="Leader Mirskle",
+            trainer_key="leader_mirskle",
+            battle_type="GYM",
+            badge_number=1,
+            locations=["Route 2", "Route 3"],
+            hm_unlocks=["Surf"],
+            level_cap_vanilla=22,
+            level_cap_difficult=26,
+            post_game=False,
+        ),
+        ProgressionEntry(
+            step=2,
+            trainer_name="Post Boss",
+            trainer_key="post_boss",
+            battle_type="BOSS",
+            badge_number=None,
+            locations=["Rift Cave"],
+            hm_unlocks=["Dive"],
+            post_game=True,
+        ),
+    )
 
 
 @pytest.fixture
 def clean_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Create a clean temporary database and patch path."""
+    """Create a clean temporary database and patch path + progression data."""
     db_dir = tmp_path / "db"
     db_dir.mkdir()
     db_path = db_dir / "user_data.duckdb"
 
     # Patch the user_db_path function
     monkeypatch.setattr(user_database, "_get_user_db_path", lambda: db_path)
+
+    # Patch load_progression to return test data
+    load_progression.cache_clear()
+    monkeypatch.setattr(
+        "unbounddb.app.game_progress_persistence.load_progression",
+        _make_test_entries,
+    )
 
     return db_path
 
@@ -50,78 +98,74 @@ class TestLoadProfile:
         assert isinstance(config, LocationFilterConfig)
 
     def test_load_profile_returns_default_for_new_profile(self, clean_db: Path) -> None:
-        """New profile gets default config (all filters off)."""
+        """New profile at step 0 has only step 0 locations and no HMs."""
         create_new_profile("jonas")
         config, _difficulty = load_profile("jonas")
 
-        # Default config has all HMs disabled
         assert config is not None
         assert config.has_surf is False
         assert config.has_dive is False
-        assert config.rod_level == "None"
         assert config.has_rock_smash is False
         assert config.post_game is False
+        assert config.accessible_locations == ["Route 1"]
+        assert config.level_cap == 15
 
-    def test_load_profile_returns_saved_values(self, clean_db: Path) -> None:
-        """Loading a profile returns previously saved values."""
+    def test_load_profile_at_step_1_has_surf(self, clean_db: Path) -> None:
+        """Profile at step 1 (after gym leader) has surf and accumulated locations."""
         create_new_profile("jonas")
+        save_profile_progress("jonas", progression_step=1, rod_level="None")
 
-        # Save a config
-        config = LocationFilterConfig(
-            has_surf=True,
-            has_dive=False,
-            rod_level="Good Rod",
-            has_rock_smash=True,
-            post_game=False,
-            level_cap=35,
-        )
-        save_profile("jonas", config, difficulty="Expert")
+        config, _difficulty = load_profile("jonas")
 
-        # Load it back
-        loaded_config, loaded_difficulty = load_profile("jonas")
+        assert config is not None
+        assert config.has_surf is True
+        assert config.accessible_locations == ["Route 1", "Route 2", "Route 3"]
+        assert config.level_cap == 22
 
-        assert loaded_config is not None
-        assert loaded_config.has_surf is True
-        assert loaded_config.has_dive is False
-        assert loaded_config.rod_level == "Good Rod"
-        assert loaded_config.has_rock_smash is True
-        assert loaded_config.post_game is False
-        assert loaded_config.level_cap == 35
-        assert loaded_difficulty == "Expert"
+    def test_load_profile_difficult_uses_difficult_cap(self, clean_db: Path) -> None:
+        """Profile with Expert difficulty uses difficult level cap."""
+        create_new_profile("jonas")
+        save_profile_progress("jonas", progression_step=1, rod_level="None", difficulty="Expert")
+
+        config, difficulty = load_profile("jonas")
+
+        assert config is not None
+        assert config.level_cap == 26
+        assert difficulty == "Expert"
 
     def test_load_nonexistent_profile_returns_default(self, clean_db: Path) -> None:
         """Loading nonexistent profile returns default config."""
         config, difficulty = load_profile("nonexistent")
 
         assert config is not None
-        assert config.has_surf is False
         assert difficulty is None
 
+    def test_load_profile_rod_level_passed_through(self, clean_db: Path) -> None:
+        """Rod level from profile is passed through to config."""
+        create_new_profile("jonas")
+        save_profile_progress("jonas", progression_step=0, rod_level="Good Rod")
 
-class TestSaveProfile:
-    """Tests for save_profile function."""
+        config, _difficulty = load_profile("jonas")
+
+        assert config is not None
+        assert config.rod_level == "Good Rod"
+
+
+class TestSaveProfileProgress:
+    """Tests for save_profile_progress function."""
 
     def test_save_profile_persists_data(self, clean_db: Path) -> None:
         """Saved profile data persists across loads."""
         create_new_profile("tim")
-
-        config = LocationFilterConfig(
-            has_surf=True,
-            has_dive=True,
-            rod_level="Super Rod",
-            has_rock_smash=True,
-            post_game=True,
-            level_cap=50,
-        )
-
-        save_profile("tim", config, difficulty="Veteran")
+        save_profile_progress("tim", progression_step=2, rod_level="Super Rod", difficulty="Veteran")
 
         # Load and verify
-        loaded_config, loaded_difficulty = load_profile("tim")
+        config, loaded_difficulty = load_profile("tim")
 
-        assert loaded_config is not None
-        assert loaded_config.has_surf is True
-        assert loaded_config.level_cap == 50
+        assert config is not None
+        assert config.post_game is True
+        assert config.has_dive is True
+        assert config.rod_level == "Super Rod"
         assert loaded_difficulty == "Veteran"
 
     def test_save_profile_does_not_affect_other_profiles(self, clean_db: Path) -> None:
@@ -129,22 +173,19 @@ class TestSaveProfile:
         create_new_profile("jonas")
         create_new_profile("tim")
 
-        config_jonas = LocationFilterConfig(has_surf=True, has_dive=False)
-        config_tim = LocationFilterConfig(has_surf=False, has_dive=True)
+        save_profile_progress("jonas", progression_step=1, rod_level="None")
+        save_profile_progress("tim", progression_step=0, rod_level="Old Rod")
 
-        save_profile("jonas", config_jonas)
-        save_profile("tim", config_tim)
+        config_jonas, _ = load_profile("jonas")
+        config_tim, _ = load_profile("tim")
 
-        loaded_jonas, _ = load_profile("jonas")
-        loaded_tim, _ = load_profile("tim")
+        assert config_jonas is not None
+        assert config_jonas.has_surf is True  # step 1 has Surf
+        assert config_jonas.rod_level == "None"
 
-        assert loaded_jonas is not None
-        assert loaded_jonas.has_surf is True
-        assert loaded_jonas.has_dive is False
-
-        assert loaded_tim is not None
-        assert loaded_tim.has_surf is False
-        assert loaded_tim.has_dive is True
+        assert config_tim is not None
+        assert config_tim.has_surf is False  # step 0 has no Surf
+        assert config_tim.rod_level == "Old Rod"
 
 
 class TestActiveProfile:

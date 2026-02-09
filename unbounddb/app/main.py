@@ -16,12 +16,11 @@ from unbounddb.app.game_progress_persistence import (
     get_active_profile_name,
     get_all_profile_names,
     load_profile,
-    save_profile,
+    save_profile_progress,
     set_active_profile,
 )
 from unbounddb.app.location_filters import LocationFilterConfig, apply_location_filters
 from unbounddb.app.queries import (
-    get_all_location_names,
     get_all_pokemon_names_from_locations,
     get_available_pokemon_set,
     get_difficulties,
@@ -54,7 +53,13 @@ from unbounddb.app.tools.pokemon_ranker import (
     get_recommended_types,
     rank_pokemon_for_trainer,
 )
+from unbounddb.app.user_database import get_profile as _get_profile_for_session
 from unbounddb.app.user_database import update_profile as _db_update_profile
+from unbounddb.progression.progression_data import (
+    compute_filter_config,
+    get_dropdown_labels,
+    load_progression,
+)
 from unbounddb.settings import settings
 
 st.set_page_config(
@@ -74,13 +79,16 @@ if not settings.db_path.exists():
 try:
     tables = get_table_list()
     difficulties = get_difficulties()
-    all_locations = get_all_location_names()
 except Exception as e:
     st.error(f"Error loading database: {e}")
     st.stop()
 
 # Rod level options for index lookup
 ROD_LEVEL_OPTIONS = ["Super Rod", "Good Rod", "Old Rod", "None"]
+
+# Load progression data (cached)
+_progression_entries = load_progression()
+_progression_labels = get_dropdown_labels(_progression_entries)
 
 # Profile selector options: dynamic from database + "None (ignore filters)"
 profile_names = get_all_profile_names()
@@ -94,29 +102,23 @@ def _on_profile_change() -> None:
         set_active_profile(None)
         # Clear widget keys when switching to "None" profile
         keys_to_clear = [
-            "global_surf",
-            "global_dive",
-            "global_rock_smash",
-            "global_post_game",
+            "global_progression_step",
             "global_rod",
-            "global_level_cap",
-            "global_accessible",
         ]
         for key in keys_to_clear:
             if key in st.session_state:
                 del st.session_state[key]
     else:
-        set_active_profile(selected)
+        profile_name: str = str(selected)
+        set_active_profile(profile_name)
         # Load the new profile's values and update session state
-        new_config, saved_difficulty = load_profile(selected)
+        new_config, saved_difficulty = load_profile(profile_name)
         if new_config:
-            st.session_state["global_surf"] = new_config.has_surf
-            st.session_state["global_dive"] = new_config.has_dive
-            st.session_state["global_rock_smash"] = new_config.has_rock_smash
-            st.session_state["global_post_game"] = new_config.post_game
-            st.session_state["global_rod"] = new_config.rod_level
-            st.session_state["global_level_cap"] = new_config.level_cap or 0
-            st.session_state["global_accessible"] = new_config.accessible_locations or []
+            # Get raw profile data for progression_step and rod_level
+            data = _get_profile_for_session(profile_name)
+            if data:
+                st.session_state["global_progression_step"] = data.get("progression_step", 0)
+                st.session_state["global_rod"] = data.get("rod_level", "None")
             # Also set the saved difficulty
             st.session_state["def_difficulty"] = saved_difficulty if saved_difficulty else "Any"
 
@@ -127,19 +129,11 @@ def _save_current_progress() -> None:
     if active_profile is None:
         return  # Don't save when "None" profile is selected
 
-    config = LocationFilterConfig(
-        has_surf=st.session_state.get("global_surf", True),
-        has_dive=st.session_state.get("global_dive", True),
-        rod_level=st.session_state.get("global_rod", "Super Rod"),
-        has_rock_smash=st.session_state.get("global_rock_smash", True),
-        post_game=st.session_state.get("global_post_game", True),
-        accessible_locations=st.session_state.get("global_accessible") or None,
-        level_cap=st.session_state.get("global_level_cap") or None,
-    )
-    # Get current difficulty to preserve it
+    progression_step = st.session_state.get("global_progression_step", 0)
+    rod_level = st.session_state.get("global_rod", "None")
     difficulty = st.session_state.get("def_difficulty")
     difficulty_to_save = difficulty if difficulty != "Any" else None
-    save_profile(active_profile, config, difficulty=difficulty_to_save)
+    save_profile_progress(active_profile, progression_step, rod_level, difficulty=difficulty_to_save)
 
 
 def _save_difficulty() -> None:
@@ -196,79 +190,57 @@ with st.expander("Manage Profiles", expanded=False):
 # Determine if filtering is active
 filtering_active = selected_profile != "None (ignore filters)"
 
-# Load saved config for the selected profile (or defaults if None)
-saved_config, saved_difficulty = load_profile(selected_profile if filtering_active else None)
+# Load saved profile data for initializing session state
+saved_config: LocationFilterConfig | None = None
+saved_difficulty: str | None = None
+saved_step: int = 0
+saved_rod: str = "None"
 
-# Initialize session state from saved config on first load (when keys don't exist)
-if filtering_active and saved_config is not None:
-    if "global_surf" not in st.session_state:
-        st.session_state["global_surf"] = saved_config.has_surf
-    if "global_dive" not in st.session_state:
-        st.session_state["global_dive"] = saved_config.has_dive
-    if "global_rock_smash" not in st.session_state:
-        st.session_state["global_rock_smash"] = saved_config.has_rock_smash
-    if "global_post_game" not in st.session_state:
-        st.session_state["global_post_game"] = saved_config.post_game
+if filtering_active:
+    saved_config, saved_difficulty = load_profile(selected_profile)
+    # Get raw profile data for session state initialization
+    raw_data = _get_profile_for_session(selected_profile)
+    if raw_data:
+        saved_step = raw_data.get("progression_step", 0)
+        saved_rod = raw_data.get("rod_level", "None")
+
+# Initialize session state from saved profile on first load (when keys don't exist)
+if filtering_active:
+    if "global_progression_step" not in st.session_state:
+        st.session_state["global_progression_step"] = saved_step
     if "global_rod" not in st.session_state:
-        st.session_state["global_rod"] = saved_config.rod_level
-    if "global_level_cap" not in st.session_state:
-        st.session_state["global_level_cap"] = saved_config.level_cap or 0
-    if "global_accessible" not in st.session_state:
-        st.session_state["global_accessible"] = saved_config.accessible_locations or []
-    # Also set the saved difficulty
+        st.session_state["global_rod"] = saved_rod
     if "def_difficulty" not in st.session_state and saved_difficulty:
         st.session_state["def_difficulty"] = saved_difficulty
 
 # Global Game Progress Config (collapsible, hidden when profile is None)
-if filtering_active and saved_config is not None:
+if filtering_active:
     with st.expander("Game Progress", expanded=False):
-        st.caption("Configure your current game progress to filter available Pokemon in the Ranker and Locations tabs.")
-        col1, col2, col3, col4, col5 = st.columns(5)
-        with col1:
-            global_has_surf = st.checkbox("Surf", key="global_surf", on_change=_save_current_progress)
-            global_has_dive = st.checkbox("Dive", key="global_dive", on_change=_save_current_progress)
-        with col2:
-            global_has_rock_smash = st.checkbox(
-                "Rock Smash",
-                key="global_rock_smash",
-                on_change=_save_current_progress,
-            )
-            global_post_game = st.checkbox("Post Game", key="global_post_game", on_change=_save_current_progress)
-        with col3:
-            global_rod_level = st.selectbox(
-                "Rod Level",
-                options=ROD_LEVEL_OPTIONS,
-                key="global_rod",
-                on_change=_save_current_progress,
-            )
-        with col4:
-            global_level_cap = st.number_input(
-                "Level Cap",
-                min_value=0,
-                max_value=100,
-                step=5,
-                key="global_level_cap",
-                help="Set to 0 for no limit. Filters Pokemon that evolve above this level.",
-                on_change=_save_current_progress,
-            )
-        with col5:
-            global_accessible_locations = st.multiselect(
-                "Accessible Locations",
-                options=all_locations,
-                key="global_accessible",
-                help="Leave empty to show all locations",
-                on_change=_save_current_progress,
-            )
+        st.caption("Select the last trainer you defeated to auto-configure location and move filters.")
 
-    # Build global filter config from UI values
-    global_filter_config: LocationFilterConfig | None = LocationFilterConfig(
-        has_surf=global_has_surf,
-        has_dive=global_has_dive,
-        rod_level=global_rod_level,
-        has_rock_smash=global_has_rock_smash,
-        post_game=global_post_game,
-        accessible_locations=global_accessible_locations if global_accessible_locations else None,
-        level_cap=global_level_cap if global_level_cap > 0 else None,
+        st.selectbox(
+            "Last Defeated Trainer",
+            options=range(len(_progression_labels)),
+            format_func=lambda i: _progression_labels[i],
+            key="global_progression_step",
+            on_change=_save_current_progress,
+        )
+
+        st.selectbox(
+            "Rod Level",
+            options=ROD_LEVEL_OPTIONS,
+            key="global_rod",
+            on_change=_save_current_progress,
+        )
+
+    # Build global filter config from progression data
+    step = st.session_state.get("global_progression_step", 0)
+    difficulty_for_config = st.session_state.get("def_difficulty")
+    if difficulty_for_config == "Any":
+        difficulty_for_config = None
+    rod_level = st.session_state.get("global_rod", "None")
+    global_filter_config: LocationFilterConfig | None = compute_filter_config(
+        _progression_entries, step, difficulty_for_config, rod_level
     )
 else:
     # No filtering when profile is None
