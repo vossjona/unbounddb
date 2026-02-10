@@ -1,16 +1,11 @@
 """ABOUTME: Entry point for Streamlit Community Cloud deployment.
-ABOUTME: Delegates to the main app module."""
+ABOUTME: Forces fresh module execution on every Streamlit rerun."""
 
-import traceback
+import sys
 
-import streamlit as st
+# Remove cached module so the import re-executes module-level code on every
+# Streamlit rerun.  Without this, Python's import cache makes the import a
+# no-op after the first load, resulting in a blank page on interaction.
+sys.modules.pop("unbounddb.app.main", None)
 
-st.write("DIAG 1: entry script executing")
-
-try:
-    import unbounddb.app.main  # noqa: F401
-except Exception:
-    st.error("Unhandled exception — this message is from the diagnostic wrapper.")
-    st.code(traceback.format_exc())
-
-st.write("DIAG 2: import completed (no exception)")
+import unbounddb.app.main  # noqa: F401, E402
