@@ -80,7 +80,7 @@ class TestGetAvailableTmMoveKeys:
         )
         result = get_available_tm_move_keys(config, db_path=db_with_tm_locations)
         assert result is not None
-        assert result == {"calm_mind"}
+        assert result == frozenset({"calm_mind"})
 
     def test_hm_filtering(self, db_with_tm_locations: Path) -> None:
         """TMs behind HMs are excluded when HMs unavailable."""
@@ -129,14 +129,14 @@ class TestGetAvailableTmMoveKeys:
         assert result is not None
         assert "sleep_talk" in result
 
-    def test_returns_set_of_strings(self, db_with_tm_locations: Path) -> None:
-        """Return type is set of strings."""
+    def test_returns_frozenset_of_strings(self, db_with_tm_locations: Path) -> None:
+        """Return type is frozenset of strings."""
         config = LocationFilterConfig(
             accessible_locations=["Fallshore City"],
             available_hms=frozenset(),
         )
         result = get_available_tm_move_keys(config, db_path=db_with_tm_locations)
         assert result is not None
-        assert isinstance(result, set)
+        assert isinstance(result, frozenset)
         for key in result:
             assert isinstance(key, str)

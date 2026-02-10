@@ -2,15 +2,16 @@
 # ABOUTME: Analyzes whether to prioritize Physical or Special attack/defense.
 
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-import polars as pl
+import streamlit as st
 
 from unbounddb.app.queries import _get_conn
-from unbounddb.build.database import fetchall_to_polars
+from unbounddb.build.database import fetchall_to_dicts
 
 
-def get_battle_pokemon_with_stats(battle_id: int, db_path: Path | None = None) -> pl.DataFrame:
+@st.cache_data
+def get_battle_pokemon_with_stats(battle_id: int, db_path: Path | None = None) -> list[dict[str, Any]]:
     """Get battle's Pokemon with base stats.
 
     Args:
@@ -18,7 +19,7 @@ def get_battle_pokemon_with_stats(battle_id: int, db_path: Path | None = None) -
         db_path: Optional path to database.
 
     Returns:
-        DataFrame with columns:
+        List of dicts with keys:
         - pokemon_key, slot, attack, defense, sp_attack, sp_defense
     """
     conn = _get_conn(db_path)
@@ -38,13 +39,13 @@ def get_battle_pokemon_with_stats(battle_id: int, db_path: Path | None = None) -
     """
 
     cursor = conn.execute(query, [battle_id])
-    result = fetchall_to_polars(cursor)
-    conn.close()
+    result = fetchall_to_dicts(cursor)
 
     return result
 
 
-def get_battle_pokemon_move_categories(battle_id: int, db_path: Path | None = None) -> pl.DataFrame:
+@st.cache_data
+def get_battle_pokemon_move_categories(battle_id: int, db_path: Path | None = None) -> list[dict[str, Any]]:
     """Get battle's Pokemon with their move categories.
 
     Args:
@@ -52,7 +53,7 @@ def get_battle_pokemon_move_categories(battle_id: int, db_path: Path | None = No
         db_path: Optional path to database.
 
     Returns:
-        DataFrame with columns:
+        List of dicts with keys:
         - pokemon_key, slot, move_key, move_name, category, power
     """
     conn = _get_conn(db_path)
@@ -73,8 +74,7 @@ def get_battle_pokemon_move_categories(battle_id: int, db_path: Path | None = No
     """
 
     cursor = conn.execute(query, [battle_id])
-    result = fetchall_to_polars(cursor)
-    conn.close()
+    result = fetchall_to_dicts(cursor)
 
     return result
 
@@ -127,17 +127,17 @@ def classify_pokemon_defensive_profile(defense: int, sp_defense: int) -> str:
         return "Balanced"
 
 
-def _group_moves_by_slot(moves_df: pl.DataFrame) -> dict[int, list[dict[str, Any]]]:
-    """Group moves DataFrame by Pokemon slot.
+def _group_moves_by_slot(moves_df: list[dict[str, Any]]) -> dict[int, list[dict[str, Any]]]:
+    """Group moves list by Pokemon slot.
 
     Args:
-        moves_df: DataFrame with move data.
+        moves_df: List of move dicts.
 
     Returns:
         Dict mapping slot numbers to lists of move dicts.
     """
     pokemon_moves_by_slot: dict[int, list[dict[str, Any]]] = {}
-    for row in moves_df.iter_rows(named=True):
+    for row in moves_df:
         slot = row["slot"]
         if slot not in pokemon_moves_by_slot:
             pokemon_moves_by_slot[slot] = []
@@ -229,6 +229,7 @@ def _empty_offensive_profile() -> dict[str, Any]:
     }
 
 
+@st.cache_data
 def analyze_battle_offensive_profile(battle_id: int, db_path: Path | None = None) -> dict[str, Any]:
     """Analyze what type of attacking moves the battle uses.
 
@@ -253,7 +254,7 @@ def analyze_battle_offensive_profile(battle_id: int, db_path: Path | None = None
     moves_df = get_battle_pokemon_move_categories(battle_id, db_path)
     stats_df = get_battle_pokemon_with_stats(battle_id, db_path)
 
-    if moves_df.is_empty() or stats_df.is_empty():
+    if not moves_df or not stats_df:
         return _empty_offensive_profile()
 
     pokemon_moves_by_slot = _group_moves_by_slot(moves_df)
@@ -263,7 +264,7 @@ def analyze_battle_offensive_profile(battle_id: int, db_path: Path | None = None
     total_physical_power = 0
     total_special_power = 0
 
-    for row in stats_df.iter_rows(named=True):
+    for row in stats_df:
         moves = pokemon_moves_by_slot.get(row["slot"], [])
         detail, phys_power, spec_power = _build_pokemon_offensive_detail(row, moves)
 
@@ -272,10 +273,8 @@ def analyze_battle_offensive_profile(battle_id: int, db_path: Path | None = None
         total_special_power += spec_power
         pokemon_details.append(detail)
 
-    attack_mean = stats_df["attack"].mean()
-    sp_attack_mean = stats_df["sp_attack"].mean()
-    avg_team_attack = cast("float", attack_mean) if attack_mean is not None else 0.0
-    avg_team_sp_attack = cast("float", sp_attack_mean) if sp_attack_mean is not None else 0.0
+    avg_team_attack = sum(r["attack"] for r in stats_df) / len(stats_df)
+    avg_team_sp_attack = sum(r["sp_attack"] for r in stats_df) / len(stats_df)
 
     recommendation = _get_offensive_recommendation(
         profile_counts["Physical"],
@@ -297,6 +296,7 @@ def analyze_battle_offensive_profile(battle_id: int, db_path: Path | None = None
     }
 
 
+@st.cache_data
 def analyze_battle_defensive_profile(battle_id: int, db_path: Path | None = None) -> dict[str, Any]:
     """Analyze what defensive stats the battle's team has.
 
@@ -319,7 +319,7 @@ def analyze_battle_defensive_profile(battle_id: int, db_path: Path | None = None
     stats_df = get_battle_pokemon_with_stats(battle_id, db_path)
 
     # Handle empty results
-    if stats_df.is_empty():
+    if not stats_df:
         return {
             "physically_defensive_count": 0,
             "specially_defensive_count": 0,
@@ -336,7 +336,7 @@ def analyze_battle_defensive_profile(battle_id: int, db_path: Path | None = None
     specially_defensive_count = 0
     balanced_count = 0
 
-    for row in stats_df.iter_rows(named=True):
+    for row in stats_df:
         pokemon_key = row["pokemon_key"]
         slot = row["slot"]
         defense = row["defense"]
@@ -363,10 +363,8 @@ def analyze_battle_defensive_profile(battle_id: int, db_path: Path | None = None
         )
 
     # Calculate team averages
-    defense_mean = stats_df["defense"].mean()
-    sp_defense_mean = stats_df["sp_defense"].mean()
-    avg_team_defense = cast("float", defense_mean) if defense_mean is not None else 0.0
-    avg_team_sp_defense = cast("float", sp_defense_mean) if sp_defense_mean is not None else 0.0
+    avg_team_defense = sum(r["defense"] for r in stats_df) / len(stats_df)
+    avg_team_sp_defense = sum(r["sp_defense"] for r in stats_df) / len(stats_df)
 
     # Determine recommendation
     # If they have more specially defensive Pokemon, use Physical moves

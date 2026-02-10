@@ -1,9 +1,8 @@
 # ABOUTME: Unit tests for Pokemon ranker scoring functions.
 # ABOUTME: Tests defense, offense, stat, BST scoring, and coverage logic for battle matchups.
 
+from typing import Any
 from unittest.mock import patch
-
-import polars as pl
 
 from unbounddb.app.tools.pokemon_ranker import (
     calculate_bst_score,
@@ -113,18 +112,28 @@ class TestOffenseScoring:
 
     def test_stab_moves_rank_higher(self) -> None:
         """STAB moves should contribute more to the score."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test", "test"],
-                "move_key": ["earthquake", "ice_beam"],
-                "move_name": ["Earthquake", "Ice Beam"],
-                "move_type": ["Ground", "Ice"],
-                "category": ["Physical", "Special"],
-                "power": [100, 90],
-                "learn_method": ["level", "tm"],
-                "level": [36, 0],
-            }
-        )
+                "pokemon_key": "test",
+                "move_key": "earthquake",
+                "move_name": "Earthquake",
+                "move_type": "Ground",
+                "category": "Physical",
+                "power": 100,
+                "learn_method": "level",
+                "level": 36,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "ice_beam",
+                "move_name": "Ice Beam",
+                "move_type": "Ice",
+                "category": "Special",
+                "power": 90,
+                "learn_method": "tm",
+                "level": 0,
+            },
+        ]
         recommended_types = [
             {"type": "Ground", "score": 20, "rank": 1},
             {"type": "Ice", "score": 15, "rank": 2},
@@ -132,7 +141,7 @@ class TestOffenseScoring:
 
         # Ground type Pokemon - Earthquake is STAB
         _score, good_moves = calculate_offense_score(
-            learnable_moves=moves_df,
+            learnable_moves=moves_list,
             recommended_types=recommended_types,
             pokemon_type1="Ground",
             pokemon_type2=None,
@@ -145,22 +154,32 @@ class TestOffenseScoring:
 
     def test_higher_power_scores_better(self) -> None:
         """Higher power moves within same type rank score better."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test", "test"],
-                "move_key": ["earthquake", "mud_slap"],
-                "move_name": ["Earthquake", "Mud-Slap"],
-                "move_type": ["Ground", "Ground"],
-                "category": ["Physical", "Special"],
-                "power": [100, 20],
-                "learn_method": ["level", "level"],
-                "level": [36, 5],
-            }
-        )
+                "pokemon_key": "test",
+                "move_key": "earthquake",
+                "move_name": "Earthquake",
+                "move_type": "Ground",
+                "category": "Physical",
+                "power": 100,
+                "learn_method": "level",
+                "level": 36,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "mud_slap",
+                "move_name": "Mud-Slap",
+                "move_type": "Ground",
+                "category": "Special",
+                "power": 20,
+                "learn_method": "level",
+                "level": 5,
+            },
+        ]
         recommended_types = [{"type": "Ground", "score": 20, "rank": 1}]
 
         _score, good_moves = calculate_offense_score(
-            learnable_moves=moves_df,
+            learnable_moves=moves_list,
             recommended_types=recommended_types,
             pokemon_type1="Normal",
             pokemon_type2=None,
@@ -173,18 +192,28 @@ class TestOffenseScoring:
 
     def test_recommended_type_rank_matters(self) -> None:
         """Moves of higher-ranked recommended types contribute more."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test", "test"],
-                "move_key": ["earthquake", "ice_beam"],
-                "move_name": ["Earthquake", "Ice Beam"],
-                "move_type": ["Ground", "Ice"],
-                "category": ["Physical", "Special"],
-                "power": [100, 100],  # Same power
-                "learn_method": ["level", "tm"],
-                "level": [36, 0],
-            }
-        )
+                "pokemon_key": "test",
+                "move_key": "earthquake",
+                "move_name": "Earthquake",
+                "move_type": "Ground",
+                "category": "Physical",
+                "power": 100,
+                "learn_method": "level",
+                "level": 36,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "ice_beam",
+                "move_name": "Ice Beam",
+                "move_type": "Ice",
+                "category": "Special",
+                "power": 100,
+                "learn_method": "tm",
+                "level": 0,
+            },
+        ]
         # Ground is rank 1, Ice is rank 4
         recommended_types = [
             {"type": "Ground", "score": 20, "rank": 1},
@@ -192,7 +221,7 @@ class TestOffenseScoring:
         ]
 
         _score, good_moves = calculate_offense_score(
-            learnable_moves=moves_df,
+            learnable_moves=moves_list,
             recommended_types=recommended_types,
             pokemon_type1="Normal",  # Neither is STAB
             pokemon_type2=None,
@@ -205,22 +234,11 @@ class TestOffenseScoring:
 
     def test_no_learnable_moves_returns_zero(self) -> None:
         """Pokemon with no learnable moves returns zero score."""
-        empty_df = pl.DataFrame(
-            schema={
-                "pokemon_key": pl.String,
-                "move_key": pl.String,
-                "move_name": pl.String,
-                "move_type": pl.String,
-                "category": pl.String,
-                "power": pl.Int64,
-                "learn_method": pl.String,
-                "level": pl.Int64,
-            }
-        )
+        empty_list: list[dict[str, Any]] = []
         recommended_types = [{"type": "Ground", "score": 20, "rank": 1}]
 
         score, good_moves = calculate_offense_score(
-            learnable_moves=empty_df,
+            learnable_moves=empty_list,
             recommended_types=recommended_types,
             pokemon_type1="Normal",
             pokemon_type2=None,
@@ -231,21 +249,21 @@ class TestOffenseScoring:
 
     def test_no_recommended_types_returns_zero(self) -> None:
         """No recommended types returns zero score."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test"],
-                "move_key": ["earthquake"],
-                "move_name": ["Earthquake"],
-                "move_type": ["Ground"],
-                "category": ["Physical"],
-                "power": [100],
-                "learn_method": ["level"],
-                "level": [36],
+                "pokemon_key": "test",
+                "move_key": "earthquake",
+                "move_name": "Earthquake",
+                "move_type": "Ground",
+                "category": "Physical",
+                "power": 100,
+                "learn_method": "level",
+                "level": 36,
             }
-        )
+        ]
 
         score, good_moves = calculate_offense_score(
-            learnable_moves=moves_df,
+            learnable_moves=moves_list,
             recommended_types=[],
             pokemon_type1="Ground",
             pokemon_type2=None,
@@ -332,18 +350,38 @@ class TestGoodMovesSorting:
 
     def test_moves_diversified_by_type_rank(self) -> None:
         """Moves are diversified by type rank for better coverage spread."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test", "test", "test"],
-                "move_key": ["ice_beam", "earthquake", "flamethrower"],
-                "move_name": ["Ice Beam", "Earthquake", "Flamethrower"],
-                "move_type": ["Ice", "Ground", "Fire"],
-                "category": ["Special", "Physical", "Special"],
-                "power": [90, 100, 90],
-                "learn_method": ["tm", "level", "tm"],
-                "level": [0, 36, 0],
-            }
-        )
+                "pokemon_key": "test",
+                "move_key": "ice_beam",
+                "move_name": "Ice Beam",
+                "move_type": "Ice",
+                "category": "Special",
+                "power": 90,
+                "learn_method": "tm",
+                "level": 0,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "earthquake",
+                "move_name": "Earthquake",
+                "move_type": "Ground",
+                "category": "Physical",
+                "power": 100,
+                "learn_method": "level",
+                "level": 36,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "flamethrower",
+                "move_name": "Flamethrower",
+                "move_type": "Fire",
+                "category": "Special",
+                "power": 90,
+                "learn_method": "tm",
+                "level": 0,
+            },
+        ]
         recommended_types = [
             {"type": "Ground", "score": 20, "rank": 1},
             {"type": "Ice", "score": 15, "rank": 2},
@@ -352,7 +390,7 @@ class TestGoodMovesSorting:
 
         # Fire type Pokemon - Flamethrower is STAB
         _, good_moves = calculate_offense_score(
-            learnable_moves=moves_df,
+            learnable_moves=moves_list,
             recommended_types=recommended_types,
             pokemon_type1="Fire",
             pokemon_type2=None,
@@ -367,22 +405,32 @@ class TestGoodMovesSorting:
 
     def test_higher_power_within_stab(self) -> None:
         """Within STAB moves, higher effective power ranks better."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test", "test"],
-                "move_key": ["flamethrower", "ember"],
-                "move_name": ["Flamethrower", "Ember"],
-                "move_type": ["Fire", "Fire"],
-                "category": ["Special", "Special"],
-                "power": [90, 40],
-                "learn_method": ["tm", "level"],
-                "level": [0, 5],
-            }
-        )
+                "pokemon_key": "test",
+                "move_key": "flamethrower",
+                "move_name": "Flamethrower",
+                "move_type": "Fire",
+                "category": "Special",
+                "power": 90,
+                "learn_method": "tm",
+                "level": 0,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "ember",
+                "move_name": "Ember",
+                "move_type": "Fire",
+                "category": "Special",
+                "power": 40,
+                "learn_method": "level",
+                "level": 5,
+            },
+        ]
         recommended_types = [{"type": "Fire", "score": 20, "rank": 1}]
 
         _, good_moves = calculate_offense_score(
-            learnable_moves=moves_df,
+            learnable_moves=moves_list,
             recommended_types=recommended_types,
             pokemon_type1="Fire",
             pokemon_type2=None,
@@ -394,18 +442,28 @@ class TestGoodMovesSorting:
 
     def test_type_rank_ordering(self) -> None:
         """Within non-STAB moves, type rank determines order."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test", "test"],
-                "move_key": ["earthquake", "ice_beam"],
-                "move_name": ["Earthquake", "Ice Beam"],
-                "move_type": ["Ground", "Ice"],
-                "category": ["Physical", "Special"],
-                "power": [100, 100],  # Same power
-                "learn_method": ["level", "tm"],
-                "level": [36, 0],
-            }
-        )
+                "pokemon_key": "test",
+                "move_key": "earthquake",
+                "move_name": "Earthquake",
+                "move_type": "Ground",
+                "category": "Physical",
+                "power": 100,
+                "learn_method": "level",
+                "level": 36,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "ice_beam",
+                "move_name": "Ice Beam",
+                "move_type": "Ice",
+                "category": "Special",
+                "power": 100,
+                "learn_method": "tm",
+                "level": 0,
+            },
+        ]
         recommended_types = [
             {"type": "Ground", "score": 20, "rank": 1},
             {"type": "Ice", "score": 15, "rank": 2},
@@ -413,7 +471,7 @@ class TestGoodMovesSorting:
 
         # Normal type - neither is STAB
         _, good_moves = calculate_offense_score(
-            learnable_moves=moves_df,
+            learnable_moves=moves_list,
             recommended_types=recommended_types,
             pokemon_type1="Normal",
             pokemon_type2=None,
@@ -430,22 +488,62 @@ class TestMoveDiversification:
     def test_max_three_moves_per_type(self) -> None:
         """No more than 3 moves per type are returned."""
         # Create 5 Fire moves
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test"] * 5,
-                "move_key": ["fire1", "fire2", "fire3", "fire4", "fire5"],
-                "move_name": ["Fire Blast", "Flamethrower", "Heat Wave", "Ember", "Flame Wheel"],
-                "move_type": ["Fire"] * 5,
-                "category": ["Special"] * 5,
-                "power": [110, 90, 95, 40, 60],
-                "learn_method": ["tm", "tm", "tm", "level", "level"],
-                "level": [0, 0, 0, 5, 15],
-            }
-        )
+                "pokemon_key": "test",
+                "move_key": "fire1",
+                "move_name": "Fire Blast",
+                "move_type": "Fire",
+                "category": "Special",
+                "power": 110,
+                "learn_method": "tm",
+                "level": 0,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "fire2",
+                "move_name": "Flamethrower",
+                "move_type": "Fire",
+                "category": "Special",
+                "power": 90,
+                "learn_method": "tm",
+                "level": 0,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "fire3",
+                "move_name": "Heat Wave",
+                "move_type": "Fire",
+                "category": "Special",
+                "power": 95,
+                "learn_method": "tm",
+                "level": 0,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "fire4",
+                "move_name": "Ember",
+                "move_type": "Fire",
+                "category": "Special",
+                "power": 40,
+                "learn_method": "level",
+                "level": 5,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "fire5",
+                "move_name": "Flame Wheel",
+                "move_type": "Fire",
+                "category": "Special",
+                "power": 60,
+                "learn_method": "level",
+                "level": 15,
+            },
+        ]
         recommended_types = [{"type": "Fire", "score": 20, "rank": 1}]
 
         _, good_moves = calculate_offense_score(
-            learnable_moves=moves_df,
+            learnable_moves=moves_list,
             recommended_types=recommended_types,
             pokemon_type1="Fire",
             pokemon_type2=None,
@@ -458,18 +556,68 @@ class TestMoveDiversification:
 
     def test_interleaving_multiple_types(self) -> None:
         """Moves from different types are interleaved for better spread."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test"] * 6,
-                "move_key": ["eq", "drill", "ice", "blizzard", "fire", "flame"],
-                "move_name": ["Earthquake", "Drill Run", "Ice Beam", "Blizzard", "Flamethrower", "Fire Blast"],
-                "move_type": ["Ground", "Ground", "Ice", "Ice", "Fire", "Fire"],
-                "category": ["Physical", "Physical", "Special", "Special", "Special", "Special"],
-                "power": [100, 80, 90, 110, 90, 110],
-                "learn_method": ["level"] * 6,
-                "level": [36, 25, 30, 40, 30, 40],
-            }
-        )
+                "pokemon_key": "test",
+                "move_key": "eq",
+                "move_name": "Earthquake",
+                "move_type": "Ground",
+                "category": "Physical",
+                "power": 100,
+                "learn_method": "level",
+                "level": 36,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "drill",
+                "move_name": "Drill Run",
+                "move_type": "Ground",
+                "category": "Physical",
+                "power": 80,
+                "learn_method": "level",
+                "level": 25,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "ice",
+                "move_name": "Ice Beam",
+                "move_type": "Ice",
+                "category": "Special",
+                "power": 90,
+                "learn_method": "level",
+                "level": 30,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "blizzard",
+                "move_name": "Blizzard",
+                "move_type": "Ice",
+                "category": "Special",
+                "power": 110,
+                "learn_method": "level",
+                "level": 40,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "fire",
+                "move_name": "Flamethrower",
+                "move_type": "Fire",
+                "category": "Special",
+                "power": 90,
+                "learn_method": "level",
+                "level": 30,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "flame",
+                "move_name": "Fire Blast",
+                "move_type": "Fire",
+                "category": "Special",
+                "power": 110,
+                "learn_method": "level",
+                "level": 40,
+            },
+        ]
         recommended_types = [
             {"type": "Ground", "score": 20, "rank": 1},
             {"type": "Ice", "score": 15, "rank": 2},
@@ -477,7 +625,7 @@ class TestMoveDiversification:
         ]
 
         _, good_moves = calculate_offense_score(
-            learnable_moves=moves_df,
+            learnable_moves=moves_list,
             recommended_types=recommended_types,
             pokemon_type1="Normal",
             pokemon_type2=None,
@@ -489,18 +637,28 @@ class TestMoveDiversification:
 
     def test_stab_type_prioritized_in_interleaving(self) -> None:
         """STAB types are prioritized when ranks are equal."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test", "test"],
-                "move_key": ["eq", "fire"],
-                "move_name": ["Earthquake", "Flamethrower"],
-                "move_type": ["Ground", "Fire"],
-                "category": ["Physical", "Special"],
-                "power": [100, 90],
-                "learn_method": ["level", "tm"],
-                "level": [36, 0],
-            }
-        )
+                "pokemon_key": "test",
+                "move_key": "eq",
+                "move_name": "Earthquake",
+                "move_type": "Ground",
+                "category": "Physical",
+                "power": 100,
+                "learn_method": "level",
+                "level": 36,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "fire",
+                "move_name": "Flamethrower",
+                "move_type": "Fire",
+                "category": "Special",
+                "power": 90,
+                "learn_method": "tm",
+                "level": 0,
+            },
+        ]
         # Same rank for both types
         recommended_types = [
             {"type": "Ground", "score": 20, "rank": 1},
@@ -509,7 +667,7 @@ class TestMoveDiversification:
 
         # Fire type Pokemon - Flamethrower is STAB
         _, good_moves = calculate_offense_score(
-            learnable_moves=moves_df,
+            learnable_moves=moves_list,
             recommended_types=recommended_types,
             pokemon_type1="Fire",
             pokemon_type2=None,
@@ -525,23 +683,23 @@ class TestEdgeCases:
 
     def test_pokemon_no_offensive_moves(self) -> None:
         """Pokemon with no offensive moves in recommended types."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test"],
-                "move_key": ["tackle"],
-                "move_name": ["Tackle"],
-                "move_type": ["Normal"],
-                "category": ["Physical"],
-                "power": [40],
-                "learn_method": ["level"],
-                "level": [1],
+                "pokemon_key": "test",
+                "move_key": "tackle",
+                "move_name": "Tackle",
+                "move_type": "Normal",
+                "category": "Physical",
+                "power": 40,
+                "learn_method": "level",
+                "level": 1,
             }
-        )
+        ]
         # Recommended types don't include Normal
         recommended_types = [{"type": "Ground", "score": 20, "rank": 1}]
 
         score, good_moves = calculate_offense_score(
-            learnable_moves=moves_df,
+            learnable_moves=moves_list,
             recommended_types=recommended_types,
             pokemon_type1="Normal",
             pokemon_type2=None,
@@ -552,22 +710,22 @@ class TestEdgeCases:
 
     def test_monotype_pokemon(self) -> None:
         """Monotype Pokemon STAB calculation is correct."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test"],
-                "move_key": ["thunderbolt"],
-                "move_name": ["Thunderbolt"],
-                "move_type": ["Electric"],
-                "category": ["Special"],
-                "power": [90],
-                "learn_method": ["level"],
-                "level": [30],
+                "pokemon_key": "test",
+                "move_key": "thunderbolt",
+                "move_name": "Thunderbolt",
+                "move_type": "Electric",
+                "category": "Special",
+                "power": 90,
+                "learn_method": "level",
+                "level": 30,
             }
-        )
+        ]
         recommended_types = [{"type": "Electric", "score": 20, "rank": 1}]
 
         _, good_moves = calculate_offense_score(
-            learnable_moves=moves_df,
+            learnable_moves=moves_list,
             recommended_types=recommended_types,
             pokemon_type1="Electric",
             pokemon_type2=None,  # Monotype
@@ -578,18 +736,28 @@ class TestEdgeCases:
 
     def test_dual_type_pokemon_both_stab(self) -> None:
         """Dual type Pokemon gets STAB for both types."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test", "test"],
-                "move_key": ["earthquake", "dragon_claw"],
-                "move_name": ["Earthquake", "Dragon Claw"],
-                "move_type": ["Ground", "Dragon"],
-                "category": ["Physical", "Physical"],
-                "power": [100, 80],
-                "learn_method": ["level", "level"],
-                "level": [36, 24],
-            }
-        )
+                "pokemon_key": "test",
+                "move_key": "earthquake",
+                "move_name": "Earthquake",
+                "move_type": "Ground",
+                "category": "Physical",
+                "power": 100,
+                "learn_method": "level",
+                "level": 36,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "dragon_claw",
+                "move_name": "Dragon Claw",
+                "move_type": "Dragon",
+                "category": "Physical",
+                "power": 80,
+                "learn_method": "level",
+                "level": 24,
+            },
+        ]
         recommended_types = [
             {"type": "Ground", "score": 20, "rank": 1},
             {"type": "Dragon", "score": 15, "rank": 2},
@@ -597,7 +765,7 @@ class TestEdgeCases:
 
         # Ground/Dragon type Pokemon
         _, good_moves = calculate_offense_score(
-            learnable_moves=moves_df,
+            learnable_moves=moves_list,
             recommended_types=recommended_types,
             pokemon_type1="Ground",
             pokemon_type2="Dragon",
@@ -619,22 +787,32 @@ class TestEdgeCases:
 
     def test_duplicate_moves_not_counted_twice(self) -> None:
         """Same move from different learn methods counted only once."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test", "test"],
-                "move_key": ["earthquake", "earthquake"],  # Same move
-                "move_name": ["Earthquake", "Earthquake"],
-                "move_type": ["Ground", "Ground"],
-                "category": ["Physical", "Physical"],
-                "power": [100, 100],
-                "learn_method": ["level", "tm"],
-                "level": [36, 0],
-            }
-        )
+                "pokemon_key": "test",
+                "move_key": "earthquake",
+                "move_name": "Earthquake",
+                "move_type": "Ground",
+                "category": "Physical",
+                "power": 100,
+                "learn_method": "level",
+                "level": 36,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "earthquake",  # Same move
+                "move_name": "Earthquake",
+                "move_type": "Ground",
+                "category": "Physical",
+                "power": 100,
+                "learn_method": "tm",
+                "level": 0,
+            },
+        ]
         recommended_types = [{"type": "Ground", "score": 20, "rank": 1}]
 
         _score, good_moves = calculate_offense_score(
-            learnable_moves=moves_df,
+            learnable_moves=moves_list,
             recommended_types=recommended_types,
             pokemon_type1="Ground",
             pokemon_type2=None,
@@ -651,21 +829,23 @@ class TestScoreCapping:
     def test_offense_score_capped_at_100(self) -> None:
         """Offense score cannot exceed 100."""
         # Create many high-powered STAB moves
-        moves_data = {
-            "pokemon_key": ["test"] * 10,
-            "move_key": [f"move_{i}" for i in range(10)],
-            "move_name": [f"Move {i}" for i in range(10)],
-            "move_type": ["Ground"] * 10,
-            "category": ["Physical"] * 10,
-            "power": [100] * 10,
-            "learn_method": ["level"] * 10,
-            "level": list(range(10, 110, 10)),
-        }
-        moves_df = pl.DataFrame(moves_data)
+        moves_list = [
+            {
+                "pokemon_key": "test",
+                "move_key": f"move_{i}",
+                "move_name": f"Move {i}",
+                "move_type": "Ground",
+                "category": "Physical",
+                "power": 100,
+                "learn_method": "level",
+                "level": (i + 1) * 10,
+            }
+            for i in range(10)
+        ]
         recommended_types = [{"type": "Ground", "score": 50, "rank": 1}]
 
         score, _ = calculate_offense_score(
-            learnable_moves=moves_df,
+            learnable_moves=moves_list,
             recommended_types=recommended_types,
             pokemon_type1="Ground",
             pokemon_type2=None,
@@ -747,72 +927,82 @@ class TestCoverage:
 
     def test_super_effective_move_covers_pokemon(self) -> None:
         """Ground move covers Electric-type battle Pokemon."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test"],
-                "move_key": ["earthquake"],
-                "move_name": ["Earthquake"],
-                "move_type": ["Ground"],
-                "category": ["Physical"],
-                "power": [100],
-                "learn_method": ["level"],
-                "level": [36],
-            }
-        )
+                "pokemon_key": "test",
+                "move_key": "earthquake",
+                "move_name": "Earthquake",
+                "move_type": "Ground",
+                "category": "Physical",
+                "power": 100,
+                "learn_method": "level",
+                "level": 36,
+            },
+        ]
         battle_pokemon = [
             {"pokemon_key": "pikachu", "type1": "Electric", "type2": None, "slot": 1},
         ]
 
-        covered_keys, count = calculate_coverage(moves_df, battle_pokemon)
+        covered_keys, count = calculate_coverage(moves_list, battle_pokemon)
 
         assert "pikachu" in covered_keys
         assert count == 1
 
     def test_no_super_effective_not_covered(self) -> None:
         """Normal moves don't cover anything super-effectively."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test"],
-                "move_key": ["tackle"],
-                "move_name": ["Tackle"],
-                "move_type": ["Normal"],
-                "category": ["Physical"],
-                "power": [40],
-                "learn_method": ["level"],
-                "level": [1],
-            }
-        )
+                "pokemon_key": "test",
+                "move_key": "tackle",
+                "move_name": "Tackle",
+                "move_type": "Normal",
+                "category": "Physical",
+                "power": 40,
+                "learn_method": "level",
+                "level": 1,
+            },
+        ]
         battle_pokemon = [
             {"pokemon_key": "pikachu", "type1": "Electric", "type2": None, "slot": 1},
             {"pokemon_key": "bulbasaur", "type1": "Grass", "type2": "Poison", "slot": 2},
         ]
 
-        covered_keys, count = calculate_coverage(moves_df, battle_pokemon)
+        covered_keys, count = calculate_coverage(moves_list, battle_pokemon)
 
         assert covered_keys == []
         assert count == 0
 
     def test_coverage_count_correct(self) -> None:
         """Coverage count matches number of covered Pokemon."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test", "test"],
-                "move_key": ["earthquake", "ice_beam"],
-                "move_name": ["Earthquake", "Ice Beam"],
-                "move_type": ["Ground", "Ice"],
-                "category": ["Physical", "Special"],
-                "power": [100, 90],
-                "learn_method": ["level", "tm"],
-                "level": [36, 0],
-            }
-        )
+                "pokemon_key": "test",
+                "move_key": "earthquake",
+                "move_name": "Earthquake",
+                "move_type": "Ground",
+                "category": "Physical",
+                "power": 100,
+                "learn_method": "level",
+                "level": 36,
+            },
+            {
+                "pokemon_key": "test",
+                "move_key": "ice_beam",
+                "move_name": "Ice Beam",
+                "move_type": "Ice",
+                "category": "Special",
+                "power": 90,
+                "learn_method": "tm",
+                "level": 0,
+            },
+        ]
         battle_pokemon = [
             {"pokemon_key": "pikachu", "type1": "Electric", "type2": None, "slot": 1},  # Covered by Ground
             {"pokemon_key": "dragonite", "type1": "Dragon", "type2": "Flying", "slot": 2},  # Covered by Ice (4x)
             {"pokemon_key": "snorlax", "type1": "Normal", "type2": None, "slot": 3},  # Not covered
         ]
 
-        covered_keys, count = calculate_coverage(moves_df, battle_pokemon)
+        covered_keys, count = calculate_coverage(moves_list, battle_pokemon)
 
         assert count == 2
         assert "pikachu" in covered_keys
@@ -821,67 +1011,55 @@ class TestCoverage:
 
     def test_dual_type_weakness_counts(self) -> None:
         """4x weakness still counts as covered."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test"],
-                "move_key": ["ice_beam"],
-                "move_name": ["Ice Beam"],
-                "move_type": ["Ice"],
-                "category": ["Special"],
-                "power": [90],
-                "learn_method": ["tm"],
-                "level": [0],
-            }
-        )
+                "pokemon_key": "test",
+                "move_key": "ice_beam",
+                "move_name": "Ice Beam",
+                "move_type": "Ice",
+                "category": "Special",
+                "power": 90,
+                "learn_method": "tm",
+                "level": 0,
+            },
+        ]
         # Dragon/Flying is 4x weak to Ice
         battle_pokemon = [
             {"pokemon_key": "dragonite", "type1": "Dragon", "type2": "Flying", "slot": 1},
         ]
 
-        covered_keys, count = calculate_coverage(moves_df, battle_pokemon)
+        covered_keys, count = calculate_coverage(moves_list, battle_pokemon)
 
         assert "dragonite" in covered_keys
         assert count == 1
 
     def test_empty_moves_no_coverage(self) -> None:
         """Empty move list means no coverage."""
-        empty_df = pl.DataFrame(
-            schema={
-                "pokemon_key": pl.String,
-                "move_key": pl.String,
-                "move_name": pl.String,
-                "move_type": pl.String,
-                "category": pl.String,
-                "power": pl.Int64,
-                "learn_method": pl.String,
-                "level": pl.Int64,
-            }
-        )
         battle_pokemon = [
             {"pokemon_key": "pikachu", "type1": "Electric", "type2": None, "slot": 1},
         ]
 
-        covered_keys, count = calculate_coverage(empty_df, battle_pokemon)
+        covered_keys, count = calculate_coverage([], battle_pokemon)
 
         assert covered_keys == []
         assert count == 0
 
     def test_empty_battle_team_no_coverage(self) -> None:
         """Empty battle team means no coverage."""
-        moves_df = pl.DataFrame(
+        moves_list = [
             {
-                "pokemon_key": ["test"],
-                "move_key": ["earthquake"],
-                "move_name": ["Earthquake"],
-                "move_type": ["Ground"],
-                "category": ["Physical"],
-                "power": [100],
-                "learn_method": ["level"],
-                "level": [36],
-            }
-        )
+                "pokemon_key": "test",
+                "move_key": "earthquake",
+                "move_name": "Earthquake",
+                "move_type": "Ground",
+                "category": "Physical",
+                "power": 100,
+                "learn_method": "level",
+                "level": 36,
+            },
+        ]
 
-        covered_keys, count = calculate_coverage(moves_df, [])
+        covered_keys, count = calculate_coverage(moves_list, [])
 
         assert covered_keys == []
         assert count == 0
@@ -892,35 +1070,79 @@ class TestRankPokemonFiltersByAvailableSet:
 
     def test_available_pokemon_filters_results(self) -> None:
         """When available_pokemon is provided, only those Pokemon should appear."""
-        # Create mock Pokemon data
-        mock_pokemon = pl.DataFrame(
+        # Create mock Pokemon data as list[dict]
+        mock_pokemon = [
             {
-                "pokemon_key": ["pikachu", "charmander", "bulbasaur"],
-                "name": ["Pikachu", "Charmander", "Bulbasaur"],
-                "type1": ["Electric", "Fire", "Grass"],
-                "type2": [None, None, "Poison"],
-                "attack": [55, 52, 49],
-                "sp_attack": [50, 60, 65],
-                "defense": [40, 43, 49],
-                "sp_defense": [50, 50, 65],
-                "speed": [90, 65, 45],
-                "bst": [320, 309, 318],
-            }
-        )
+                "pokemon_key": "pikachu",
+                "name": "Pikachu",
+                "type1": "Electric",
+                "type2": None,
+                "attack": 55,
+                "sp_attack": 50,
+                "defense": 40,
+                "sp_defense": 50,
+                "speed": 90,
+                "bst": 320,
+            },
+            {
+                "pokemon_key": "charmander",
+                "name": "Charmander",
+                "type1": "Fire",
+                "type2": None,
+                "attack": 52,
+                "sp_attack": 60,
+                "defense": 43,
+                "sp_defense": 50,
+                "speed": 65,
+                "bst": 309,
+            },
+            {
+                "pokemon_key": "bulbasaur",
+                "name": "Bulbasaur",
+                "type1": "Grass",
+                "type2": "Poison",
+                "attack": 49,
+                "sp_attack": 65,
+                "defense": 49,
+                "sp_defense": 65,
+                "speed": 45,
+                "bst": 318,
+            },
+        ]
 
-        # Create mock moves data
-        mock_moves = pl.DataFrame(
+        # Create mock moves data as list[dict]
+        mock_moves = [
             {
-                "pokemon_key": ["pikachu", "charmander", "bulbasaur"],
-                "move_key": ["thunderbolt", "ember", "vine_whip"],
-                "learn_method": ["level", "level", "level"],
-                "level": [26, 10, 13],
-                "move_name": ["Thunderbolt", "Ember", "Vine Whip"],
-                "move_type": ["Electric", "Fire", "Grass"],
-                "category": ["Special", "Special", "Physical"],
-                "power": [90, 40, 45],
-            }
-        )
+                "pokemon_key": "pikachu",
+                "move_key": "thunderbolt",
+                "learn_method": "level",
+                "level": 26,
+                "move_name": "Thunderbolt",
+                "move_type": "Electric",
+                "category": "Special",
+                "power": 90,
+            },
+            {
+                "pokemon_key": "charmander",
+                "move_key": "ember",
+                "learn_method": "level",
+                "level": 10,
+                "move_name": "Ember",
+                "move_type": "Fire",
+                "category": "Special",
+                "power": 40,
+            },
+            {
+                "pokemon_key": "bulbasaur",
+                "move_key": "vine_whip",
+                "learn_method": "level",
+                "level": 13,
+                "move_name": "Vine Whip",
+                "move_type": "Grass",
+                "category": "Physical",
+                "power": 45,
+            },
+        ]
 
         # Mock battle analysis functions
         mock_team = [
@@ -958,29 +1180,29 @@ class TestRankPokemonFiltersByAvailableSet:
             assert len(result_all) == 3
 
             # Test with filter - should only get Pikachu and Charmander
-            available = {"Pikachu", "Charmander"}
+            available = frozenset({"Pikachu", "Charmander"})
             result_filtered = rank_pokemon_for_battle(battle_id=1, top_n=0, available_pokemon=available)
             assert len(result_filtered) == 2
-            names = set(result_filtered["name"].to_list())
+            names = {r["name"] for r in result_filtered}
             assert names == {"Pikachu", "Charmander"}
             assert "Bulbasaur" not in names
 
     def test_empty_available_pokemon_returns_empty(self) -> None:
         """When available_pokemon is empty set, no Pokemon should appear."""
-        mock_pokemon = pl.DataFrame(
+        mock_pokemon = [
             {
-                "pokemon_key": ["pikachu"],
-                "name": ["Pikachu"],
-                "type1": ["Electric"],
-                "type2": [None],
-                "attack": [55],
-                "sp_attack": [50],
-                "defense": [40],
-                "sp_defense": [50],
-                "speed": [90],
-                "bst": [320],
-            }
-        )
+                "pokemon_key": "pikachu",
+                "name": "Pikachu",
+                "type1": "Electric",
+                "type2": None,
+                "attack": 55,
+                "sp_attack": 50,
+                "defense": 40,
+                "sp_defense": 50,
+                "speed": 90,
+                "bst": 320,
+            },
+        ]
 
         with (
             patch(
@@ -989,7 +1211,7 @@ class TestRankPokemonFiltersByAvailableSet:
             ),
             patch(
                 "unbounddb.app.tools.pokemon_ranker.get_all_learnable_offensive_moves",
-                return_value=pl.DataFrame(),
+                return_value=[],
             ),
             patch(
                 "unbounddb.app.tools.pokemon_ranker.get_battle_move_types",
@@ -1008,6 +1230,6 @@ class TestRankPokemonFiltersByAvailableSet:
                 return_value=[],
             ),
         ):
-            # Empty available set should return empty DataFrame
-            result = rank_pokemon_for_battle(battle_id=1, top_n=0, available_pokemon=set())
-            assert result.is_empty()
+            # Empty available set should return empty list
+            result = rank_pokemon_for_battle(battle_id=1, top_n=0, available_pokemon=frozenset())
+            assert result == []

@@ -4,10 +4,10 @@
 from pathlib import Path
 from typing import Any
 
-import polars as pl
+import streamlit as st
 
 from unbounddb.app.queries import _get_conn
-from unbounddb.build.database import fetchall_to_polars
+from unbounddb.build.database import fetchall_to_dicts
 from unbounddb.utils.type_chart import (
     generate_all_type_combinations,
     get_effectiveness,
@@ -42,17 +42,17 @@ def _count_neutralized_pokemon(
     return neutralized_count
 
 
-def _build_pokemon_move_types(pokemon_moves_df: pl.DataFrame) -> dict[int, list[str]]:
+def _build_pokemon_move_types(pokemon_moves_df: list[dict[str, Any]]) -> dict[int, list[str]]:
     """Build a mapping of Pokemon slots to their offensive move types.
 
     Args:
-        pokemon_moves_df: DataFrame with pokemon moves data.
+        pokemon_moves_df: List of dicts with pokemon moves data.
 
     Returns:
         Dict mapping slot numbers to lists of unique move types.
     """
     pokemon_by_slot: dict[int, list[str]] = {}
-    for row in pokemon_moves_df.iter_rows(named=True):
+    for row in pokemon_moves_df:
         slot = row["slot"]
         move_type = row["move_type"]
         category = row["move_category"]
@@ -108,6 +108,7 @@ def _score_type_combination(
     }
 
 
+@st.cache_data
 def get_battle_move_types(battle_id: int, db_path: Path | None = None) -> list[str]:
     """Get unique offensive move types from a battle's team.
 
@@ -135,12 +136,12 @@ def get_battle_move_types(battle_id: int, db_path: Path | None = None) -> list[s
     """
 
     result = conn.execute(query, [battle_id]).fetchall()
-    conn.close()
 
     return [row[0] for row in result]
 
 
-def get_battle_pokemon_with_moves(battle_id: int, db_path: Path | None = None) -> pl.DataFrame:
+@st.cache_data
+def get_battle_pokemon_with_moves(battle_id: int, db_path: Path | None = None) -> list[dict[str, Any]]:
     """Get battle's Pokemon with their moves and types.
 
     Args:
@@ -148,7 +149,7 @@ def get_battle_pokemon_with_moves(battle_id: int, db_path: Path | None = None) -
         db_path: Optional path to database.
 
     Returns:
-        DataFrame with columns:
+        List of dicts with keys:
         - pokemon_key, slot, type1, type2, move_key, move_name, move_type, move_category
     """
     conn = _get_conn(db_path)
@@ -172,13 +173,13 @@ def get_battle_pokemon_with_moves(battle_id: int, db_path: Path | None = None) -
     """
 
     cursor = conn.execute(query, [battle_id])
-    result = fetchall_to_polars(cursor)
-    conn.close()
+    result = fetchall_to_dicts(cursor)
 
     return result
 
 
-def analyze_battle_defense(battle_id: int, db_path: Path | None = None) -> pl.DataFrame:
+@st.cache_data
+def analyze_battle_defense(battle_id: int, db_path: Path | None = None) -> list[dict[str, Any]]:
     """Analyze all 171 type combinations against a battle's team.
 
     Args:
@@ -186,7 +187,7 @@ def analyze_battle_defense(battle_id: int, db_path: Path | None = None) -> pl.Da
         db_path: Optional path to database.
 
     Returns:
-        DataFrame with columns:
+        List of dicts with keys:
         - type1, type2 (defensive typing)
         - immunity_count, resistance_count, neutral_count, weakness_count
         - pokemon_neutralized (count of battle Pokemon with no super-effective moves)
@@ -199,21 +200,7 @@ def analyze_battle_defense(battle_id: int, db_path: Path | None = None) -> pl.Da
     move_types = get_battle_move_types(battle_id, db_path)
 
     if not move_types:
-        return pl.DataFrame(
-            schema={
-                "type1": pl.String,
-                "type2": pl.String,
-                "immunity_count": pl.Int64,
-                "resistance_count": pl.Int64,
-                "neutral_count": pl.Int64,
-                "weakness_count": pl.Int64,
-                "pokemon_neutralized": pl.Int64,
-                "immunities_list": pl.String,
-                "resistances_list": pl.String,
-                "weaknesses_list": pl.String,
-                "score": pl.Int64,
-            }
-        )
+        return []
 
     # Get Pokemon with their moves for neutralization calculation
     pokemon_moves_df = get_battle_pokemon_with_moves(battle_id, db_path)
@@ -226,16 +213,16 @@ def analyze_battle_defense(battle_id: int, db_path: Path | None = None) -> pl.Da
         for def_type1, def_type2 in all_combos
     ]
 
-    df = pl.DataFrame(results)
-    return df.sort("score", descending=True)
+    return sorted(results, key=lambda r: r["score"], reverse=True)
 
 
+@st.cache_data
 def get_neutralized_pokemon_detail(
     battle_id: int,
     def_type1: str,
     def_type2: str | None,
     db_path: Path | None = None,
-) -> pl.DataFrame:
+) -> list[dict[str, Any]]:
     """Get detail of which battle Pokemon are neutralized by a defensive typing.
 
     Args:
@@ -245,32 +232,21 @@ def get_neutralized_pokemon_detail(
         db_path: Optional path to database.
 
     Returns:
-        DataFrame with columns:
+        List of dicts with keys:
         - pokemon_key, slot, pokemon_type1, pokemon_type2
         - best_move, best_move_type, best_effectiveness
         - is_neutralized (True if best_effectiveness <= 1.0)
     """
     pokemon_moves_df = get_battle_pokemon_with_moves(battle_id, db_path)
 
-    if pokemon_moves_df.is_empty():
-        return pl.DataFrame(
-            schema={
-                "pokemon_key": pl.String,
-                "slot": pl.Int64,
-                "pokemon_type1": pl.String,
-                "pokemon_type2": pl.String,
-                "best_move": pl.String,
-                "best_move_type": pl.String,
-                "best_effectiveness": pl.Float64,
-                "is_neutralized": pl.Boolean,
-            }
-        )
+    if not pokemon_moves_df:
+        return []
 
     # Group by Pokemon and find their best move
     results: list[dict[str, Any]] = []
     seen_slots: set[int] = set()
 
-    for row in pokemon_moves_df.iter_rows(named=True):
+    for row in pokemon_moves_df:
         slot = row["slot"]
         pokemon_key = row["pokemon_key"]
         pokemon_type1 = row["pokemon_type1"]
@@ -312,5 +288,4 @@ def get_neutralized_pokemon_detail(
     for r in results:
         r["is_neutralized"] = r["best_effectiveness"] <= 1.0
 
-    df = pl.DataFrame(results)
-    return df.sort("slot")
+    return sorted(results, key=lambda r: r["slot"])

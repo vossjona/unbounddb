@@ -3,15 +3,18 @@
 
 from pathlib import Path
 
+import streamlit as st
+
 from unbounddb.app.location_filters import LocationFilterConfig
 from unbounddb.app.queries import _get_conn
-from unbounddb.build.database import fetchall_to_polars
+from unbounddb.build.database import fetchall_to_dicts
 
 
+@st.cache_data
 def get_available_tm_move_keys(
     filter_config: LocationFilterConfig | None,
     db_path: Path | None = None,
-) -> set[str] | None:
+) -> frozenset[str] | None:
     """Get the set of TM move keys available at the current game progression.
 
     Checks each TM against:
@@ -25,7 +28,7 @@ def get_available_tm_move_keys(
         db_path: Optional path to database.
 
     Returns:
-        Set of move_key strings for available TMs, or None if no filtering
+        Frozenset of move_key strings for available TMs, or None if no filtering
         should be applied (filter_config is None or tm_locations table missing).
     """
     if filter_config is None:
@@ -37,23 +40,21 @@ def get_available_tm_move_keys(
     tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     table_names = {row[0] for row in tables}
     if "tm_locations" not in table_names:
-        conn.close()
         return None
 
     query = "SELECT move_key, location, required_hms, is_post_game FROM tm_locations"
     cursor = conn.execute(query)
-    df = fetchall_to_polars(cursor)
-    conn.close()
+    rows = fetchall_to_dicts(cursor)
 
-    if df.is_empty():
-        return set()
+    if not rows:
+        return frozenset()
 
     accessible = set(filter_config.accessible_locations) if filter_config.accessible_locations else set()
     available_hms = filter_config.available_hms
 
     available_keys: set[str] = set()
 
-    for row in df.iter_rows(named=True):
+    for row in rows:
         # Check post-game restriction
         if row["is_post_game"] and not filter_config.post_game:
             continue
@@ -71,4 +72,4 @@ def get_available_tm_move_keys(
 
         available_keys.add(row["move_key"])
 
-    return available_keys
+    return frozenset(available_keys)

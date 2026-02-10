@@ -4,13 +4,13 @@
 from pathlib import Path
 from typing import Any
 
-import polars as pl
+import streamlit as st
 
 from unbounddb.app.queries import _get_conn
 from unbounddb.app.tools.defensive_suggester import get_battle_move_types
 from unbounddb.app.tools.offensive_suggester import analyze_single_type_offense, get_battle_pokemon_types
 from unbounddb.app.tools.phys_spec_analyzer import analyze_battle_defensive_profile
-from unbounddb.build.database import fetchall_to_polars
+from unbounddb.build.database import fetchall_to_dicts
 from unbounddb.utils.type_chart import (
     IMMUNITY_VALUE,
     RESISTANCE_THRESHOLD,
@@ -23,14 +23,15 @@ from unbounddb.utils.type_chart import (
 VALID_TYPES = set(TYPES)
 
 
-def get_all_pokemon_with_stats(db_path: Path | None = None) -> pl.DataFrame:
+@st.cache_data
+def get_all_pokemon_with_stats(db_path: Path | None = None) -> list[dict[str, Any]]:
     """Batch query all Pokemon with their stats and types.
 
     Args:
         db_path: Optional path to database.
 
     Returns:
-        DataFrame with columns:
+        List of dicts with keys:
         - pokemon_key, name, type1, type2, attack, sp_attack, defense, sp_defense, speed, bst
     """
     conn = _get_conn(db_path)
@@ -43,16 +44,16 @@ def get_all_pokemon_with_stats(db_path: Path | None = None) -> pl.DataFrame:
     """
 
     cursor = conn.execute(query)
-    result = fetchall_to_polars(cursor)
-    conn.close()
+    result = fetchall_to_dicts(cursor)
 
     return result
 
 
+@st.cache_data
 def get_all_learnable_offensive_moves(
     db_path: Path | None = None,
-    available_tm_keys: set[str] | None = None,
-) -> pl.DataFrame:
+    available_tm_keys: frozenset[str] | None = None,
+) -> list[dict[str, Any]]:
     """Batch query all offensive moves that Pokemon can learn.
 
     Excludes tutor moves since they have no structured location data
@@ -66,7 +67,7 @@ def get_all_learnable_offensive_moves(
             If None, all TM moves are included.
 
     Returns:
-        DataFrame with columns:
+        List of dicts with keys:
         - pokemon_key, move_key, move_name, move_type, category, power, learn_method, level
     """
     conn = _get_conn(db_path)
@@ -83,16 +84,16 @@ def get_all_learnable_offensive_moves(
     """
 
     cursor = conn.execute(query)
-    result = fetchall_to_polars(cursor)
-    conn.close()
+    result = fetchall_to_dicts(cursor)
 
     # Filter out TM moves that aren't obtainable at current progression
-    if available_tm_keys is not None and not result.is_empty():
-        result = result.filter((pl.col("learn_method") != "tm") | pl.col("move_key").is_in(available_tm_keys))
+    if available_tm_keys is not None and result:
+        result = [r for r in result if r["learn_method"] != "tm" or r["move_key"] in available_tm_keys]
 
     return result
 
 
+@st.cache_data
 def get_recommended_types(
     battle_id: int,
     top_n: int = 4,
@@ -110,11 +111,11 @@ def get_recommended_types(
     """
     single_type_df = analyze_single_type_offense(battle_id, db_path)
 
-    if single_type_df.is_empty():
+    if not single_type_df:
         return []
 
     results: list[dict[str, Any]] = []
-    for i, row in enumerate(single_type_df.head(top_n).iter_rows(named=True)):
+    for i, row in enumerate(single_type_df[:top_n]):
         results.append(
             {
                 "type": row["type"],
@@ -189,7 +190,7 @@ def calculate_defense_score(
 
 
 def calculate_offense_score(
-    learnable_moves: pl.DataFrame,
+    learnable_moves: list[dict[str, Any]],
     recommended_types: list[dict[str, Any]],
     pokemon_type1: str,
     pokemon_type2: str | None,
@@ -209,7 +210,7 @@ def calculate_offense_score(
     Score is capped at 100.
 
     Args:
-        learnable_moves: DataFrame of moves the Pokemon can learn.
+        learnable_moves: List of dicts of moves the Pokemon can learn.
         recommended_types: List of dicts with type and rank.
         pokemon_type1: Pokemon's primary type.
         pokemon_type2: Pokemon's secondary type (or None).
@@ -219,7 +220,7 @@ def calculate_offense_score(
         Tuple of (score, good_moves_list)
         good_moves_list: List of dicts with move details and effective power
     """
-    if learnable_moves.is_empty():
+    if not learnable_moves:
         return 0.0, []
 
     # Build type -> rank lookup
@@ -235,7 +236,7 @@ def calculate_offense_score(
     good_moves: list[dict[str, Any]] = []
     seen_moves: set[str] = set()
 
-    for row in learnable_moves.iter_rows(named=True):
+    for row in learnable_moves:
         move_type = row["move_type"]
         move_key = row["move_key"]
 
@@ -355,7 +356,7 @@ def calculate_bst_score(bst: int) -> float:
 
 
 def calculate_coverage(
-    learnable_moves: pl.DataFrame,
+    learnable_moves: list[dict[str, Any]],
     battle_pokemon: list[dict[str, Any]],
 ) -> tuple[list[str], int]:
     """Calculate which battle Pokemon can be hit super-effectively.
@@ -368,11 +369,11 @@ def calculate_coverage(
         Tuple of (covered_pokemon_keys, coverage_count)
         covered_pokemon_keys: List of pokemon_key strings that are covered
     """
-    if learnable_moves.is_empty() or not battle_pokemon:
+    if not learnable_moves or not battle_pokemon:
         return [], 0
 
     # Extract unique move types from learnable moves
-    move_types = set(learnable_moves["move_type"].unique().to_list())
+    move_types = list({r["move_type"] for r in learnable_moves})
 
     covered_keys: list[str] = []
 
@@ -472,13 +473,14 @@ def _get_top_moves_string(good_moves: list[dict[str, Any]], limit: int = 5) -> s
     return ", ".join(move_names)
 
 
+@st.cache_data
 def rank_pokemon_for_battle(
     battle_id: int,
     db_path: Path | None = None,
     top_n: int = 50,
-    available_pokemon: set[str] | None = None,
-    available_tm_keys: set[str] | None = None,
-) -> pl.DataFrame:
+    available_pokemon: frozenset[str] | None = None,
+    available_tm_keys: frozenset[str] | None = None,
+) -> list[dict[str, Any]]:
     """Rank all Pokemon for a battle matchup using composite scoring.
 
     Scoring weights:
@@ -494,7 +496,7 @@ def rank_pokemon_for_battle(
             If provided, TM moves not in this set are excluded from scoring.
 
     Returns:
-        DataFrame with columns:
+        List of dicts with keys:
         - rank, pokemon_key, name, type1, type2, bst
         - total_score, defense_score, offense_score, stat_score, bst_score
         - immunities, resistances, weaknesses (comma-separated strings)
@@ -515,44 +517,25 @@ def rank_pokemon_for_battle(
 
     # Filter by available Pokemon if specified
     if available_pokemon is not None:
-        all_pokemon = all_pokemon.filter(pl.col("name").is_in(available_pokemon))
+        all_pokemon = [r for r in all_pokemon if r["name"] in available_pokemon]
 
-    if all_pokemon.is_empty():
-        return pl.DataFrame(
-            schema={
-                "rank": pl.Int64,
-                "pokemon_key": pl.String,
-                "name": pl.String,
-                "type1": pl.String,
-                "type2": pl.String,
-                "bst": pl.Int64,
-                "total_score": pl.Float64,
-                "defense_score": pl.Float64,
-                "offense_score": pl.Float64,
-                "stat_score": pl.Float64,
-                "bst_score": pl.Float64,
-                "immunities": pl.String,
-                "resistances": pl.String,
-                "weaknesses": pl.String,
-                "top_moves": pl.String,
-                "covers": pl.String,
-                "coverage_count": pl.Int64,
-            }
-        )
+    if not all_pokemon:
+        return []
 
     # Group moves by pokemon_key for efficient lookup
-    moves_by_pokemon: dict[str, pl.DataFrame] = {}
-    if not all_moves.is_empty():
-        for pokemon_key in all_pokemon["pokemon_key"].unique().to_list():
-            pokemon_moves = all_moves.filter(pl.col("pokemon_key") == pokemon_key)
-            if not pokemon_moves.is_empty():
-                moves_by_pokemon[pokemon_key] = pokemon_moves
+    moves_by_pokemon: dict[str, list[dict[str, Any]]] = {}
+    if all_moves:
+        for move in all_moves:
+            pk = move["pokemon_key"]
+            if pk not in moves_by_pokemon:
+                moves_by_pokemon[pk] = []
+            moves_by_pokemon[pk].append(move)
 
     # Score each Pokemon
     results: list[dict[str, Any]] = []
     total_battle_pokemon = len(battle_pokemon)
 
-    for row in all_pokemon.iter_rows(named=True):
+    for row in all_pokemon:
         pokemon_key = row["pokemon_key"]
         type1 = row["type1"]
         type2 = row["type2"]
@@ -564,7 +547,7 @@ def rank_pokemon_for_battle(
         defense_score, immunities, resistances, weaknesses = calculate_defense_score(type1, type2, move_types)
 
         # Offense score
-        pokemon_moves = moves_by_pokemon.get(pokemon_key, pl.DataFrame())
+        pokemon_moves = moves_by_pokemon.get(pokemon_key, [])
         offense_score, good_moves = calculate_offense_score(
             pokemon_moves,
             recommended_types,
@@ -610,48 +593,25 @@ def rank_pokemon_for_battle(
             }
         )
 
-    # Create DataFrame and sort by total score
-    df = pl.DataFrame(results)
-    df = df.sort("total_score", descending=True)
+    # Sort by total score
+    results.sort(key=lambda r: r["total_score"], reverse=True)
 
     # Add rank column
-    df = df.with_row_index("rank", offset=1)
-
-    # Reorder columns
-    df = df.select(
-        [
-            "rank",
-            "pokemon_key",
-            "name",
-            "type1",
-            "type2",
-            "bst",
-            "total_score",
-            "defense_score",
-            "offense_score",
-            "stat_score",
-            "bst_score",
-            "immunities",
-            "resistances",
-            "weaknesses",
-            "top_moves",
-            "covers",
-            "coverage_count",
-            "covered_pokemon",
-        ]
-    )
+    for i, result in enumerate(results):
+        result["rank"] = i + 1
 
     if top_n > 0:
-        df = df.head(top_n)
+        results = results[:top_n]
 
-    return df
+    return results
 
 
+@st.cache_data
 def get_pokemon_moves_detail(
     pokemon_key: str,
     battle_id: int,
     db_path: Path | None = None,
-    available_tm_keys: set[str] | None = None,
+    available_tm_keys: frozenset[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Get detailed good moves for a specific Pokemon against a battle.
 
@@ -670,7 +630,6 @@ def get_pokemon_moves_detail(
     conn = _get_conn(db_path)
     query = "SELECT type1, type2 FROM pokemon WHERE pokemon_key = ?"
     result = conn.execute(query, [pokemon_key]).fetchone()
-    conn.close()
 
     if not result:
         return []
@@ -683,9 +642,9 @@ def get_pokemon_moves_detail(
 
     # Get Pokemon's learnable moves
     all_moves = get_all_learnable_offensive_moves(db_path, available_tm_keys=available_tm_keys)
-    pokemon_moves = all_moves.filter(pl.col("pokemon_key") == pokemon_key)
+    pokemon_moves = [m for m in all_moves if m["pokemon_key"] == pokemon_key]
 
-    if pokemon_moves.is_empty():
+    if not pokemon_moves:
         return []
 
     # Calculate offense score to get good moves list
@@ -700,11 +659,12 @@ def get_pokemon_moves_detail(
     return good_moves
 
 
+@st.cache_data
 def get_coverage_detail(
     pokemon_key: str,
     battle_id: int,
     db_path: Path | None = None,
-    available_tm_keys: set[str] | None = None,
+    available_tm_keys: frozenset[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Get detailed coverage breakdown for a Pokemon against battle's team.
 
@@ -726,9 +686,9 @@ def get_coverage_detail(
 
     # Get Pokemon's learnable moves
     all_moves = get_all_learnable_offensive_moves(db_path, available_tm_keys=available_tm_keys)
-    pokemon_moves = all_moves.filter(pl.col("pokemon_key") == pokemon_key)
+    pokemon_moves = [m for m in all_moves if m["pokemon_key"] == pokemon_key]
 
-    if pokemon_moves.is_empty():
+    if not pokemon_moves:
         # No moves - none covered
         return [
             {
@@ -743,7 +703,7 @@ def get_coverage_detail(
         ]
 
     # Extract unique move types
-    move_types = set(pokemon_moves["move_type"].unique().to_list())
+    move_types = list({r["move_type"] for r in pokemon_moves})
 
     results: list[dict[str, Any]] = []
 

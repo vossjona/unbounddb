@@ -4,7 +4,6 @@
 import sqlite3
 from pathlib import Path
 
-import polars as pl
 import pytest
 
 from unbounddb.app.location_filters import LocationFilterConfig, apply_location_filters
@@ -23,31 +22,43 @@ class TestApplyLocationFiltersHasSurf:
 
     def test_excludes_surfing_when_no_surf(self) -> None:
         """When has_surf=False, surfing encounters should be excluded."""
-        df = pl.DataFrame(
+        data = [
             {
-                "location_name": ["Route 1", "Route 2"],
-                "encounter_method": ["grass", "surfing"],
-                "encounter_notes": ["", ""],
-                "requirement": ["", ""],
-            }
-        )
+                "location_name": "Route 1",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Route 2",
+                "encounter_method": "surfing",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+        ]
         config = LocationFilterConfig(has_surf=False)
-        result = apply_location_filters(df, config)
+        result = apply_location_filters(data, config)
         assert len(result) == 1
-        assert result["encounter_method"].to_list() == ["grass"]
+        assert [r["encounter_method"] for r in result] == ["grass"]
 
     def test_includes_surfing_when_has_surf(self) -> None:
         """When has_surf=True, surfing encounters should be included."""
-        df = pl.DataFrame(
+        data = [
             {
-                "location_name": ["Route 1", "Route 2"],
-                "encounter_method": ["grass", "surfing"],
-                "encounter_notes": ["", ""],
-                "requirement": ["", ""],
-            }
-        )
+                "location_name": "Route 1",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Route 2",
+                "encounter_method": "surfing",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+        ]
         config = LocationFilterConfig(has_surf=True)
-        result = apply_location_filters(df, config)
+        result = apply_location_filters(data, config)
         assert len(result) == 2
 
 
@@ -56,31 +67,43 @@ class TestApplyLocationFiltersHasDive:
 
     def test_excludes_underwater_when_no_dive(self) -> None:
         """When has_dive=False, Underwater encounters should be excluded."""
-        df = pl.DataFrame(
+        data = [
             {
-                "location_name": ["Route 1", "Route 2"],
-                "encounter_method": ["surfing", "surfing"],
-                "encounter_notes": ["", "Underwater"],
-                "requirement": ["", ""],
-            }
-        )
+                "location_name": "Route 1",
+                "encounter_method": "surfing",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Route 2",
+                "encounter_method": "surfing",
+                "encounter_notes": "Underwater",
+                "requirement": "",
+            },
+        ]
         config = LocationFilterConfig(has_dive=False)
-        result = apply_location_filters(df, config)
+        result = apply_location_filters(data, config)
         assert len(result) == 1
-        assert "Underwater" not in result["encounter_notes"].to_list()
+        assert "Underwater" not in [r["encounter_notes"] for r in result]
 
     def test_includes_underwater_when_has_dive(self) -> None:
         """When has_dive=True, Underwater encounters should be included."""
-        df = pl.DataFrame(
+        data = [
             {
-                "location_name": ["Route 1", "Route 2"],
-                "encounter_method": ["surfing", "surfing"],
-                "encounter_notes": ["", "Underwater"],
-                "requirement": ["", ""],
-            }
-        )
+                "location_name": "Route 1",
+                "encounter_method": "surfing",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Route 2",
+                "encounter_method": "surfing",
+                "encounter_notes": "Underwater",
+                "requirement": "",
+            },
+        ]
         config = LocationFilterConfig(has_dive=True)
-        result = apply_location_filters(df, config)
+        result = apply_location_filters(data, config)
         assert len(result) == 2
 
 
@@ -88,49 +111,67 @@ class TestApplyLocationFiltersRodLevel:
     """Tests for the rod_level filter in apply_location_filters."""
 
     @pytest.fixture
-    def rod_df(self) -> pl.DataFrame:
-        """DataFrame with all rod types and grass."""
-        return pl.DataFrame(
+    def rod_df(self) -> list[dict[str, str]]:
+        """List of dicts with all rod types and grass."""
+        return [
             {
-                "location_name": ["Route 1"] * 4,
-                "encounter_method": ["grass", "old_rod", "good_rod", "super_rod"],
-                "encounter_notes": ["", "", "", ""],
-                "requirement": ["", "", "", ""],
-            }
-        )
+                "location_name": "Route 1",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Route 1",
+                "encounter_method": "old_rod",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Route 1",
+                "encounter_method": "good_rod",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Route 1",
+                "encounter_method": "super_rod",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+        ]
 
-    def test_rod_none_excludes_all_rods(self, rod_df: pl.DataFrame) -> None:
+    def test_rod_none_excludes_all_rods(self, rod_df: list[dict[str, str]]) -> None:
         """When rod_level=None, all rod encounters should be excluded."""
         config = LocationFilterConfig(rod_level="None")
         result = apply_location_filters(rod_df, config)
         assert len(result) == 1
-        assert result["encounter_method"].to_list() == ["grass"]
+        assert [r["encounter_method"] for r in result] == ["grass"]
 
-    def test_old_rod_excludes_good_and_super(self, rod_df: pl.DataFrame) -> None:
+    def test_old_rod_excludes_good_and_super(self, rod_df: list[dict[str, str]]) -> None:
         """When rod_level=Old Rod, good_rod and super_rod should be excluded."""
         config = LocationFilterConfig(rod_level="Old Rod")
         result = apply_location_filters(rod_df, config)
-        methods = result["encounter_method"].to_list()
+        methods = [r["encounter_method"] for r in result]
         assert "grass" in methods
         assert "old_rod" in methods
         assert "good_rod" not in methods
         assert "super_rod" not in methods
 
-    def test_good_rod_excludes_super(self, rod_df: pl.DataFrame) -> None:
+    def test_good_rod_excludes_super(self, rod_df: list[dict[str, str]]) -> None:
         """When rod_level=Good Rod, super_rod should be excluded."""
         config = LocationFilterConfig(rod_level="Good Rod")
         result = apply_location_filters(rod_df, config)
-        methods = result["encounter_method"].to_list()
+        methods = [r["encounter_method"] for r in result]
         assert "grass" in methods
         assert "old_rod" in methods
         assert "good_rod" in methods
         assert "super_rod" not in methods
 
-    def test_super_rod_includes_all(self, rod_df: pl.DataFrame) -> None:
+    def test_super_rod_includes_all(self, rod_df: list[dict[str, str]]) -> None:
         """When rod_level=Super Rod, all rods should be included."""
         config = LocationFilterConfig(rod_level="Super Rod")
         result = apply_location_filters(rod_df, config)
-        methods = result["encounter_method"].to_list()
+        methods = [r["encounter_method"] for r in result]
         assert len(methods) == 4
 
 
@@ -139,31 +180,43 @@ class TestApplyLocationFiltersRockSmash:
 
     def test_excludes_rock_smash_when_disabled(self) -> None:
         """When has_rock_smash=False, rock_smash encounters should be excluded."""
-        df = pl.DataFrame(
+        data = [
             {
-                "location_name": ["Route 1", "Route 2"],
-                "encounter_method": ["grass", "rock_smash"],
-                "encounter_notes": ["", ""],
-                "requirement": ["", ""],
-            }
-        )
+                "location_name": "Route 1",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Route 2",
+                "encounter_method": "rock_smash",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+        ]
         config = LocationFilterConfig(has_rock_smash=False)
-        result = apply_location_filters(df, config)
+        result = apply_location_filters(data, config)
         assert len(result) == 1
-        assert result["encounter_method"].to_list() == ["grass"]
+        assert [r["encounter_method"] for r in result] == ["grass"]
 
     def test_includes_rock_smash_when_enabled(self) -> None:
         """When has_rock_smash=True, rock_smash encounters should be included."""
-        df = pl.DataFrame(
+        data = [
             {
-                "location_name": ["Route 1", "Route 2"],
-                "encounter_method": ["grass", "rock_smash"],
-                "encounter_notes": ["", ""],
-                "requirement": ["", ""],
-            }
-        )
+                "location_name": "Route 1",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Route 2",
+                "encounter_method": "rock_smash",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+        ]
         config = LocationFilterConfig(has_rock_smash=True)
-        result = apply_location_filters(df, config)
+        result = apply_location_filters(data, config)
         assert len(result) == 2
 
 
@@ -172,46 +225,64 @@ class TestApplyLocationFiltersPostGame:
 
     def test_excludes_post_game_locations_when_disabled(self) -> None:
         """When post_game=False, Post-game locations should be excluded."""
-        df = pl.DataFrame(
+        data = [
             {
-                "location_name": ["Route 1", "Post-game Area"],
-                "encounter_method": ["grass", "grass"],
-                "encounter_notes": ["", ""],
-                "requirement": ["", ""],
-            }
-        )
+                "location_name": "Route 1",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Post-game Area",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+        ]
         config = LocationFilterConfig(post_game=False)
-        result = apply_location_filters(df, config)
+        result = apply_location_filters(data, config)
         assert len(result) == 1
-        assert result["location_name"].to_list() == ["Route 1"]
+        assert [r["location_name"] for r in result] == ["Route 1"]
 
     def test_excludes_beat_the_league_requirement_when_disabled(self) -> None:
         """When post_game=False, Beat the League requirements should be excluded."""
-        df = pl.DataFrame(
+        data = [
             {
-                "location_name": ["Route 1", "Route 2"],
-                "encounter_method": ["grass", "grass"],
-                "encounter_notes": ["", ""],
-                "requirement": ["", "Beat the League"],
-            }
-        )
+                "location_name": "Route 1",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Route 2",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "Beat the League",
+            },
+        ]
         config = LocationFilterConfig(post_game=False)
-        result = apply_location_filters(df, config)
+        result = apply_location_filters(data, config)
         assert len(result) == 1
-        assert result["location_name"].to_list() == ["Route 1"]
+        assert [r["location_name"] for r in result] == ["Route 1"]
 
     def test_includes_post_game_when_enabled(self) -> None:
         """When post_game=True, Post-game locations should be included."""
-        df = pl.DataFrame(
+        data = [
             {
-                "location_name": ["Route 1", "Post-game Area"],
-                "encounter_method": ["grass", "grass"],
-                "encounter_notes": ["", ""],
-                "requirement": ["", "Beat the League"],
-            }
-        )
+                "location_name": "Route 1",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Post-game Area",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "Beat the League",
+            },
+        ]
         config = LocationFilterConfig(post_game=True)
-        result = apply_location_filters(df, config)
+        result = apply_location_filters(data, config)
         assert len(result) == 2
 
 
@@ -220,72 +291,94 @@ class TestApplyLocationFiltersAccessible:
 
     def test_empty_list_includes_all_locations(self) -> None:
         """When accessible_locations is empty, all locations should be included."""
-        df = pl.DataFrame(
+        data = [
             {
-                "location_name": ["Route 1", "Route 2", "Route 3"],
-                "encounter_method": ["grass", "grass", "grass"],
-                "encounter_notes": ["", "", ""],
-                "requirement": ["", "", ""],
-            }
-        )
+                "location_name": "Route 1",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Route 2",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Route 3",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+        ]
         config = LocationFilterConfig(accessible_locations=[])
-        result = apply_location_filters(df, config)
+        result = apply_location_filters(data, config)
         assert len(result) == 3
 
     def test_none_includes_all_locations(self) -> None:
         """When accessible_locations is None, all locations should be included."""
-        df = pl.DataFrame(
+        data = [
             {
-                "location_name": ["Route 1", "Route 2", "Route 3"],
-                "encounter_method": ["grass", "grass", "grass"],
-                "encounter_notes": ["", "", ""],
-                "requirement": ["", "", ""],
-            }
-        )
+                "location_name": "Route 1",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Route 2",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Route 3",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+        ]
         config = LocationFilterConfig(accessible_locations=None)
-        result = apply_location_filters(df, config)
+        result = apply_location_filters(data, config)
         assert len(result) == 3
 
     def test_filters_to_only_selected_locations(self) -> None:
         """When accessible_locations is specified, only those should be included."""
-        df = pl.DataFrame(
+        data = [
             {
-                "location_name": ["Route 1", "Route 2", "Route 3"],
-                "encounter_method": ["grass", "grass", "grass"],
-                "encounter_notes": ["", "", ""],
-                "requirement": ["", "", ""],
-            }
-        )
+                "location_name": "Route 1",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Route 2",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Route 3",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+        ]
         config = LocationFilterConfig(accessible_locations=["Route 1", "Route 3"])
-        result = apply_location_filters(df, config)
+        result = apply_location_filters(data, config)
         assert len(result) == 2
-        assert set(result["location_name"].to_list()) == {"Route 1", "Route 3"}
+        assert {r["location_name"] for r in result} == {"Route 1", "Route 3"}
 
 
 class TestApplyLocationFiltersEmptyInput:
     """Tests for handling empty inputs."""
 
     def test_empty_dataframe_returns_empty(self) -> None:
-        """Empty input DataFrame should return empty DataFrame."""
-        df = pl.DataFrame(
-            schema={
-                "pokemon": pl.String,
-                "location_name": pl.String,
-                "encounter_method": pl.String,
-                "encounter_notes": pl.String,
-                "requirement": pl.String,
-            }
-        )
+        """Empty input list should return empty list."""
+        data: list[dict[str, str]] = []
         config = LocationFilterConfig()
-        result = apply_location_filters(df, config)
-        assert result.is_empty()
-        assert list(result.columns) == [
-            "pokemon",
-            "location_name",
-            "encounter_method",
-            "encounter_notes",
-            "requirement",
-        ]
+        result = apply_location_filters(data, config)
+        assert not result
+        assert result == []
 
 
 class TestApplyLocationFiltersCombined:
@@ -293,14 +386,32 @@ class TestApplyLocationFiltersCombined:
 
     def test_multiple_filters_combine_correctly(self) -> None:
         """Multiple filters should combine with AND logic."""
-        df = pl.DataFrame(
+        data = [
             {
-                "location_name": ["Route 1", "Route 2", "Post-game Area", "Route 3"],
-                "encounter_method": ["surfing", "grass", "grass", "super_rod"],
-                "encounter_notes": ["Underwater", "", "", ""],
-                "requirement": ["", "", "Beat the League", ""],
-            }
-        )
+                "location_name": "Route 1",
+                "encounter_method": "surfing",
+                "encounter_notes": "Underwater",
+                "requirement": "",
+            },
+            {
+                "location_name": "Route 2",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Post-game Area",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "Beat the League",
+            },
+            {
+                "location_name": "Route 3",
+                "encounter_method": "super_rod",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+        ]
         config = LocationFilterConfig(
             has_surf=True,  # Surfing included
             has_dive=False,  # But not underwater
@@ -309,13 +420,13 @@ class TestApplyLocationFiltersCombined:
             post_game=False,  # No post-game
             accessible_locations=None,
         )
-        result = apply_location_filters(df, config)
+        result = apply_location_filters(data, config)
         # Route 1 excluded (underwater)
         # Route 2 included
         # Post-game Area excluded (post-game)
         # Route 3 excluded (super rod)
         assert len(result) == 1
-        assert result["location_name"].to_list() == ["Route 2"]
+        assert [r["location_name"] for r in result] == ["Route 2"]
 
 
 class TestLocationFilterConfigDefaults:
@@ -458,25 +569,25 @@ class TestSearchPokemonLocationsWithPreEvolutions:
 
         # Should find Charmander's locations when searching for Charizard
         assert len(result) == 2
-        assert "Charmander" in result["pokemon"].to_list()
-        assert "Mt. Ember" in result["location_name"].to_list()
-        assert "Fire Path" in result["location_name"].to_list()
+        assert "Charmander" in [r["pokemon"] for r in result]
+        assert "Mt. Ember" in [r["location_name"] for r in result]
+        assert "Fire Path" in [r["location_name"] for r in result]
 
     def test_search_locations_returns_pokemon_column(self, test_db: Path) -> None:
         """Result should include pokemon column showing which Pokemon spawns."""
         result = search_pokemon_locations("Charizard", test_db)
 
-        assert "pokemon" in result.columns
+        assert all("pokemon" in r for r in result)
         # All results should show Charmander since that's what actually spawns
-        assert all(p == "Charmander" for p in result["pokemon"].to_list())
+        assert all(r["pokemon"] == "Charmander" for r in result)
 
     def test_search_locations_no_pre_evolutions(self, test_db: Path) -> None:
         """Pokemon with no pre-evolutions should only return its own locations."""
         result = search_pokemon_locations("Magikarp", test_db)
 
         assert len(result) == 1
-        assert result["pokemon"].to_list() == ["Magikarp"]
-        assert result["location_name"].to_list() == ["Route 1"]
+        assert [r["pokemon"] for r in result] == ["Magikarp"]
+        assert [r["location_name"] for r in result] == ["Route 1"]
 
 
 class TestGetAllPokemonNamesFromLocations:

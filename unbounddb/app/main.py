@@ -303,7 +303,7 @@ with tab1:
             row_label = "all" if show_all else f"{len(preview)} of"
             st.subheader(f"{selected_table} ({row_label} {len(preview)} rows)")
             st.dataframe(
-                preview.to_pandas(),
+                preview,
                 width="stretch",
                 hide_index=True,
             )
@@ -391,9 +391,9 @@ with tab2:
                     st.stop()
 
                 # Analyze defensive types
-                analysis_df = analyze_battle_defense(battle_id)
+                analysis_results = analyze_battle_defense(battle_id)
 
-                if analysis_df.is_empty():
+                if not analysis_results:
                     st.warning("Could not analyze defensive types.")
                 else:
                     st.subheader("Best Defensive Typings")
@@ -406,11 +406,11 @@ with tab2:
                     )
 
                     # Limit results
-                    display_df = analysis_df if show_all_combos else analysis_df.head(20)
+                    display_rows = analysis_results if show_all_combos else analysis_results[:20]
 
                     # Create display table
                     table_data = []
-                    for row in display_df.iter_rows(named=True):
+                    for row in display_rows:
                         type_combo = row["type1"]
                         if row["type2"]:
                             type_combo = f"{row['type1']}/{row['type2']}"
@@ -434,7 +434,7 @@ with tab2:
 
                     # Expanders for detail view
                     st.subheader("Detailed Breakdown")
-                    for i, row in enumerate(display_df.head(10).iter_rows(named=True)):
+                    for i, row in enumerate(display_rows[:10]):
                         type_combo = row["type1"]
                         type2 = row["type2"]
                         if type2:
@@ -456,26 +456,26 @@ with tab2:
                                 st.write(row["weaknesses_list"])
 
                             # Get neutralized Pokemon detail
-                            detail_df = get_neutralized_pokemon_detail(battle_id, row["type1"], type2)
+                            detail_rows = get_neutralized_pokemon_detail(battle_id, row["type1"], type2)
 
-                            if not detail_df.is_empty():
-                                neutralized = detail_df.filter(detail_df["is_neutralized"])
-                                can_hurt = detail_df.filter(~detail_df["is_neutralized"])
+                            if detail_rows:
+                                neutralized = [r for r in detail_rows if r["is_neutralized"]]
+                                can_hurt = [r for r in detail_rows if not r["is_neutralized"]]
 
-                                total_pokemon = len(detail_df)
+                                total_pokemon = len(detail_rows)
 
-                                if not neutralized.is_empty():
+                                if neutralized:
                                     st.markdown(f"**Pokemon Neutralized ({len(neutralized)}/{total_pokemon}):**")
-                                    for prow in neutralized.iter_rows(named=True):
+                                    for prow in neutralized:
                                         eff_str = f"{prow['best_effectiveness']}x"
                                         st.write(
                                             f"- {prow['pokemon_key']} (slot {prow['slot']}): "
                                             f"Best move = {prow['best_move']} ({eff_str})"
                                         )
 
-                                if not can_hurt.is_empty():
+                                if can_hurt:
                                     st.markdown(f"**Can Still Hurt You ({len(can_hurt)}/{total_pokemon}):**")
-                                    for prow in can_hurt.iter_rows(named=True):
+                                    for prow in can_hurt:
                                         eff_str = f"{prow['best_effectiveness']}x"
                                         st.write(
                                             f"- {prow['pokemon_key']} (slot {prow['slot']}): "
@@ -490,9 +490,9 @@ with tab2:
                     # --- Individual Type Rankings ---
                     st.subheader("Individual Type Rankings")
 
-                    single_type_df = analyze_single_type_offense(battle_id)
+                    single_type_results = analyze_single_type_offense(battle_id)
 
-                    if single_type_df.is_empty():
+                    if not single_type_results:
                         st.warning("Could not analyze offensive types.")
                     else:
                         show_all_types = st.checkbox(
@@ -501,7 +501,7 @@ with tab2:
                             key="off_show_all_types",
                         )
 
-                        display_single_df = single_type_df if show_all_types else single_type_df.head(10)
+                        display_single = single_type_results if show_all_types else single_type_results[:10]
 
                         # Create display table
                         single_table_data = [
@@ -514,7 +514,7 @@ with tab2:
                                 "Immune": row["immune_count"],
                                 "Score": row["score"],
                             }
-                            for row in display_single_df.iter_rows(named=True)
+                            for row in display_single
                         ]
 
                         st.dataframe(
@@ -524,13 +524,13 @@ with tab2:
                         )
 
                         # Expanders for individual type details
-                        for row in display_single_df.head(5).iter_rows(named=True):
+                        for row in display_single[:5]:
                             atk_type = row["type"]
                             with st.expander(f"{atk_type} Details (Score: {row['score']})"):
-                                detail_df = get_single_type_detail(battle_id, atk_type)
+                                detail_rows = get_single_type_detail(battle_id, atk_type)
 
-                                if not detail_df.is_empty():
-                                    for prow in detail_df.iter_rows(named=True):
+                                if detail_rows:
+                                    for prow in detail_rows:
                                         type_str = prow["type1"]
                                         if prow["type2"]:
                                             type_str = f"{prow['type1']}/{prow['type2']}"
@@ -542,9 +542,9 @@ with tab2:
                     st.subheader("Best 4-Type Coverage")
                     st.caption("Pokemon can learn 4 moves. These combinations maximize super-effective coverage.")
 
-                    coverage_df = analyze_four_type_coverage(battle_id)
+                    coverage_results = analyze_four_type_coverage(battle_id)
 
-                    if coverage_df.is_empty():
+                    if not coverage_results:
                         st.warning("Could not analyze type coverage.")
                     else:
                         show_all_combos_off = st.checkbox(
@@ -553,7 +553,7 @@ with tab2:
                             key="off_show_all_combos",
                         )
 
-                        display_coverage_df = coverage_df if show_all_combos_off else coverage_df.head(20)
+                        display_coverage = coverage_results if show_all_combos_off else coverage_results[:20]
 
                         # Create display table
                         coverage_table_data = [
@@ -563,7 +563,7 @@ with tab2:
                                 "Coverage": f"{row['coverage_pct']}%",
                                 "Score": row["score"],
                             }
-                            for row in display_coverage_df.iter_rows(named=True)
+                            for row in display_coverage
                         ]
 
                         st.dataframe(
@@ -573,20 +573,20 @@ with tab2:
                         )
 
                         # Expanders for coverage details
-                        for row in display_coverage_df.head(5).iter_rows(named=True):
+                        for row in display_coverage[:5]:
                             types_str = row["types"]
                             types_list = [t.strip() for t in types_str.split(",")]
 
                             with st.expander(f"{types_str} (Score: {row['score']})"):
-                                detail_df = get_type_coverage_detail(battle_id, types_list)
+                                detail_rows = get_type_coverage_detail(battle_id, tuple(types_list))
 
-                                if not detail_df.is_empty():
-                                    covered = detail_df.filter(detail_df["is_covered"])
-                                    not_covered = detail_df.filter(~detail_df["is_covered"])
+                                if detail_rows:
+                                    covered = [r for r in detail_rows if r["is_covered"]]
+                                    not_covered = [r for r in detail_rows if not r["is_covered"]]
 
-                                    if not covered.is_empty():
+                                    if covered:
                                         st.markdown("**Covered (2x+):**")
-                                        for prow in covered.iter_rows(named=True):
+                                        for prow in covered:
                                             type_str = prow["type1"]
                                             if prow["type2"]:
                                                 type_str = f"{prow['type1']}/{prow['type2']}"
@@ -595,9 +595,9 @@ with tab2:
                                                 f"{prow['best_type']} ({prow['best_effectiveness']}x)"
                                             )
 
-                                    if not not_covered.is_empty():
+                                    if not_covered:
                                         st.markdown("**Not Covered (<2x):**")
-                                        for prow in not_covered.iter_rows(named=True):
+                                        for prow in not_covered:
                                             type_str = prow["type1"]
                                             if prow["type2"]:
                                                 type_str = f"{prow['type1']}/{prow['type2']}"
@@ -747,19 +747,19 @@ with tab2:
 
                     # Get rankings - filter by available Pokemon and TMs
                     limit = 0 if show_all_pokemon else 50
-                    rankings_df = rank_pokemon_for_battle(
+                    rankings = rank_pokemon_for_battle(
                         battle_id,
                         top_n=limit,
                         available_pokemon=available_pokemon,
                         available_tm_keys=available_tm_keys,
                     )
 
-                    if rankings_df.is_empty():
+                    if not rankings:
                         st.warning("Could not rank Pokemon. Make sure move data is available.")
                     else:
                         # Create display table
                         ranker_table_data = []
-                        for row in rankings_df.iter_rows(named=True):
+                        for row in rankings:
                             type_combo = row["type1"]
                             if row["type2"]:
                                 type_combo = f"{row['type1']}/{row['type2']}"
@@ -783,7 +783,7 @@ with tab2:
 
                         # Expanders for top Pokemon details
                         st.subheader("Detailed Breakdown")
-                        for row in rankings_df.head(10).iter_rows(named=True):
+                        for row in rankings[:10]:
                             type_combo = row["type1"]
                             if row["type2"]:
                                 type_combo = f"{row['type1']}/{row['type2']}"
@@ -929,16 +929,16 @@ with tab3:
         render_pokemon_with_popup(f":material/info: View {selected_pokemon} Stats", selected_pokemon)
 
         # Query locations for selected Pokemon
-        locations_df = search_pokemon_locations(selected_pokemon)
+        location_rows = search_pokemon_locations(selected_pokemon)
 
-        if locations_df.is_empty():
+        if not location_rows:
             st.warning(f"No catch locations found for {selected_pokemon}.")
         else:
             # Apply global filters
-            filtered_df = apply_location_filters(locations_df, global_filter_config)
+            filtered_rows = apply_location_filters(location_rows, global_filter_config)
 
-            if filtered_df.is_empty():
-                unfiltered_pokemon = set(locations_df["pokemon"].unique().to_list())
+            if not filtered_rows:
+                unfiltered_pokemon = {r["pokemon"] for r in location_rows}
                 if selected_pokemon not in unfiltered_pokemon:
                     # Evolved form — pre-evos exist in DB but none pass filters
                     pre_evo_names = ", ".join(sorted(unfiltered_pokemon))
@@ -955,7 +955,7 @@ with tab3:
                     )
             else:
                 # Show level cap warning if the searched Pokemon isn't directly catchable
-                catchable_names = set(filtered_df["pokemon"].unique().to_list())
+                catchable_names = {r["pokemon"] for r in filtered_rows}
                 if (
                     selected_pokemon not in catchable_names
                     and global_filter_config is not None
@@ -970,10 +970,10 @@ with tab3:
                             f"{global_filter_config.level_cap}."
                         )
 
-                st.subheader(f"Found in {len(filtered_df)} location(s)")
+                st.subheader(f"Found in {len(filtered_rows)} location(s)")
 
                 # Show info popups for unique catchable Pokemon (pre-evolutions)
-                unique_pokemon = filtered_df["pokemon"].unique().to_list()
+                unique_pokemon = list({r["pokemon"] for r in filtered_rows})
                 if len(unique_pokemon) > 1:
                     st.caption("Click to view stats for catchable forms:")
                     pokemon_cols = st.columns(min(len(unique_pokemon), 4))
@@ -985,7 +985,7 @@ with tab3:
 
                 # Display results table
                 table_data = []
-                for row in filtered_df.iter_rows(named=True):
+                for row in filtered_rows:
                     notes = row["encounter_notes"] if row["encounter_notes"] else "-"
                     req = row["requirement"] if row["requirement"] else "-"
                     table_data.append(

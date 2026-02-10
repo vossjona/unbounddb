@@ -1,5 +1,7 @@
 # ABOUTME: Persistence layer for game progress settings with multi-profile support.
-# ABOUTME: Delegates to user_database.py for DuckDB storage, computes filters from progression data.
+# ABOUTME: Delegates to user_database.py for storage, computes filters from progression data.
+
+import streamlit as st
 
 from unbounddb.app.location_filters import LocationFilterConfig
 from unbounddb.app.user_database import (
@@ -32,6 +34,7 @@ def _get_default_config() -> LocationFilterConfig:
     return compute_filter_config(entries, step=0, difficulty=None)
 
 
+@st.cache_data
 def get_all_profile_names() -> list[str]:
     """Get all profile names from the database.
 
@@ -50,7 +53,10 @@ def create_new_profile(name: str) -> bool:
     Returns:
         True if created successfully, False if name already exists.
     """
-    return _db_create_profile(name)
+    result = _db_create_profile(name)
+    if result:
+        get_all_profile_names.clear()
+    return result
 
 
 def delete_profile_by_name(name: str) -> bool:
@@ -62,9 +68,15 @@ def delete_profile_by_name(name: str) -> bool:
     Returns:
         True if deleted, False if not found.
     """
-    return _db_delete_profile(name)
+    result = _db_delete_profile(name)
+    if result:
+        get_all_profile_names.clear()
+        get_active_profile_name.clear()
+        load_profile.clear()
+    return result
 
 
+@st.cache_data
 def load_profile(
     name: str | None,
 ) -> tuple[LocationFilterConfig | None, str | None, int, str]:
@@ -117,8 +129,10 @@ def save_profile_progress(
         rod_level=rod_level,
         difficulty=difficulty,
     )
+    load_profile.clear()
 
 
+@st.cache_data
 def get_active_profile_name() -> str | None:
     """Get the currently selected profile name.
 
@@ -135,3 +149,4 @@ def set_active_profile(name: str | None) -> None:
         name: Profile name or None to ignore filters.
     """
     _db_set_active_profile(name)
+    get_active_profile_name.clear()

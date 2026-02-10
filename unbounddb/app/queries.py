@@ -3,11 +3,11 @@
 
 import sqlite3
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-import polars as pl
+import streamlit as st
 
-from unbounddb.build.database import fetchall_to_polars, get_connection
+from unbounddb.build.database import fetchall_to_dicts, get_connection
 from unbounddb.build.normalize import slugify
 from unbounddb.settings import settings
 
@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from unbounddb.app.location_filters import LocationFilterConfig
 
 
+@st.cache_resource
 def _get_conn(db_path: Path | None = None) -> sqlite3.Connection:
     """Get database connection with fallback to settings."""
     if db_path is None:
@@ -22,6 +23,7 @@ def _get_conn(db_path: Path | None = None) -> sqlite3.Connection:
     return get_connection(db_path)
 
 
+@st.cache_data
 def get_available_types(db_path: Path | None = None) -> list[str]:
     """Get list of unique Pokemon types from the database.
 
@@ -42,7 +44,6 @@ def get_available_types(db_path: Path | None = None) -> list[str]:
         type_cols = [c for c in col_names if "type" in c.lower()]
 
         if not type_cols:
-            conn.close()
             return []
 
         # Get unique values from first type column
@@ -51,14 +52,13 @@ def get_available_types(db_path: Path | None = None) -> list[str]:
         result = conn.execute(
             f"SELECT DISTINCT {type_col} FROM pokemon WHERE {type_col} IS NOT NULL ORDER BY 1"  # noqa: S608
         ).fetchall()
-        conn.close()
 
         return [r[0] for r in result if r[0]]
     except Exception:
-        conn.close()
         return []
 
 
+@st.cache_data
 def get_available_moves(db_path: Path | None = None) -> list[str]:
     """Get list of unique move names from the database.
 
@@ -83,26 +83,24 @@ def get_available_moves(db_path: Path | None = None) -> list[str]:
                 break
 
         if name_col is None:
-            conn.close()
             return []
 
         # Column names come from schema introspection, not user input
         result = conn.execute(
             f"SELECT DISTINCT {name_col} FROM moves WHERE {name_col} IS NOT NULL ORDER BY 1"  # noqa: S608
         ).fetchall()
-        conn.close()
 
         return [r[0] for r in result if r[0]]
     except Exception:
-        conn.close()
         return []
 
 
+@st.cache_data
 def search_pokemon_by_type_and_move(
     pokemon_type: str | None = None,
     move_name: str | None = None,
     db_path: Path | None = None,
-) -> pl.DataFrame:
+) -> list[dict[str, Any]]:
     """Search for Pokemon matching type and/or move criteria.
 
     Args:
@@ -111,7 +109,7 @@ def search_pokemon_by_type_and_move(
         db_path: Optional path to database.
 
     Returns:
-        DataFrame with matching Pokemon.
+        List of dicts with matching Pokemon.
     """
     conn = _get_conn(db_path)
 
@@ -156,16 +154,15 @@ def search_pokemon_by_type_and_move(
                 query += f" ORDER BY p.{name_cols[0]}"
 
         cursor = conn.execute(query, params)
-        result = fetchall_to_polars(cursor)
-        conn.close()
+        result = fetchall_to_dicts(cursor)
         return result
 
     except Exception as e:
-        conn.close()
         raise e
 
 
-def get_table_preview(table_name: str, limit: int | None = 100, db_path: Path | None = None) -> pl.DataFrame:
+@st.cache_data
+def get_table_preview(table_name: str, limit: int | None = 100, db_path: Path | None = None) -> list[dict[str, Any]]:
     """Get a preview of a table's contents.
 
     Args:
@@ -174,7 +171,7 @@ def get_table_preview(table_name: str, limit: int | None = 100, db_path: Path | 
         db_path: Optional path to database.
 
     Returns:
-        DataFrame with table contents.
+        List of dicts with table contents.
     """
     conn = _get_conn(db_path)
 
@@ -184,14 +181,13 @@ def get_table_preview(table_name: str, limit: int | None = 100, db_path: Path | 
             cursor = conn.execute(f"SELECT * FROM {table_name}")  # noqa: S608
         else:
             cursor = conn.execute(f"SELECT * FROM {table_name} LIMIT ?", [limit])  # noqa: S608
-        result = fetchall_to_polars(cursor)
-        conn.close()
+        result = fetchall_to_dicts(cursor)
         return result
     except Exception as e:
-        conn.close()
         raise e
 
 
+@st.cache_data
 def get_table_list(db_path: Path | None = None) -> list[str]:
     """Get list of available tables in the database.
 
@@ -205,13 +201,12 @@ def get_table_list(db_path: Path | None = None) -> list[str]:
 
     try:
         tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-        conn.close()
         return [t[0] for t in tables]
     except Exception:
-        conn.close()
         return []
 
 
+@st.cache_data
 def get_difficulties(db_path: Path | None = None) -> list[str]:
     """Get list of unique difficulty levels from battles table.
 
@@ -227,13 +222,12 @@ def get_difficulties(db_path: Path | None = None) -> list[str]:
         result = conn.execute(
             "SELECT DISTINCT difficulty FROM battles WHERE difficulty IS NOT NULL ORDER BY difficulty"
         ).fetchall()
-        conn.close()
         return [r[0] for r in result]
     except Exception:
-        conn.close()
         return []
 
 
+@st.cache_data
 def get_battles_by_difficulty(difficulty: str | None = None, db_path: Path | None = None) -> list[tuple[int, str]]:
     """Get list of (battle_id, name) tuples, optionally filtered by difficulty.
 
@@ -254,13 +248,12 @@ def get_battles_by_difficulty(difficulty: str | None = None, db_path: Path | Non
                 "SELECT battle_id, name FROM battles WHERE difficulty = ? ORDER BY name",
                 [difficulty],
             ).fetchall()
-        conn.close()
         return [(r[0], r[1]) for r in result]
     except Exception:
-        conn.close()
         return []
 
 
+@st.cache_data
 def get_battle_by_id(battle_id: int, db_path: Path | None = None) -> dict[str, str | None] | None:
     """Get battle details by ID.
 
@@ -278,7 +271,6 @@ def get_battle_by_id(battle_id: int, db_path: Path | None = None) -> dict[str, s
             "SELECT battle_id, name, difficulty FROM battles WHERE battle_id = ?",
             [battle_id],
         ).fetchone()
-        conn.close()
         if result:
             return {
                 "battle_id": result[0],
@@ -287,11 +279,11 @@ def get_battle_by_id(battle_id: int, db_path: Path | None = None) -> dict[str, s
             }
         return None
     except Exception:
-        conn.close()
         return None
 
 
-def get_battle_team_with_moves(battle_id: int, db_path: Path | None = None) -> pl.DataFrame:
+@st.cache_data
+def get_battle_team_with_moves(battle_id: int, db_path: Path | None = None) -> list[dict[str, Any]]:
     """Get a battle's full team with Pokemon types and move details.
 
     Joins: battles -> battle_pokemon -> pokemon (for types)
@@ -302,7 +294,7 @@ def get_battle_team_with_moves(battle_id: int, db_path: Path | None = None) -> p
         db_path: Optional path to database.
 
     Returns:
-        DataFrame with battle's team and move information.
+        List of dicts with battle's team and move information.
     """
     conn = _get_conn(db_path)
 
@@ -326,14 +318,13 @@ def get_battle_team_with_moves(battle_id: int, db_path: Path | None = None) -> p
 
     try:
         cursor = conn.execute(query, [battle_id])
-        result = fetchall_to_polars(cursor)
-        conn.close()
+        result = fetchall_to_dicts(cursor)
         return result
     except Exception as e:
-        conn.close()
         raise e
 
 
+@st.cache_data
 def get_pre_evolutions(pokemon_name: str, db_path: Path | None = None) -> list[str]:
     """Get all pre-evolutions of a Pokemon using recursive CTE.
 
@@ -368,13 +359,12 @@ def get_pre_evolutions(pokemon_name: str, db_path: Path | None = None) -> list[s
 
     try:
         result = conn.execute(query, [pokemon_name]).fetchall()
-        conn.close()
         return [r[0] for r in result]
     except Exception:
-        conn.close()
         return []
 
 
+@st.cache_data
 def get_all_evolutions(
     pokemon_name: str,
     db_path: Path | None = None,
@@ -448,13 +438,12 @@ def get_all_evolutions(
 
     try:
         result = conn.execute(query, params).fetchall()
-        conn.close()
         return [r[0] for r in result]
     except Exception:
-        conn.close()
         return []
 
 
+@st.cache_data
 def get_first_blocked_evolution(
     pokemon_name: str,
     level_cap: int,
@@ -500,7 +489,6 @@ def get_first_blocked_evolution(
 
     try:
         result = conn.execute(query, [pokemon_name, level_cap]).fetchone()
-        conn.close()
         if result is None:
             return None
         return {
@@ -509,14 +497,14 @@ def get_first_blocked_evolution(
             "level": result[2],
         }
     except Exception:
-        conn.close()
         return None
 
 
+@st.cache_data
 def get_available_pokemon_set(
     filter_config: "LocationFilterConfig | None",
     db_path: Path | None = None,
-) -> set[str] | None:
+) -> frozenset[str] | None:
     """Get set of Pokemon names available given game progress filters.
 
     Returns Pokemon whose pre-evolution chain has at least one catch location
@@ -528,7 +516,7 @@ def get_available_pokemon_set(
         db_path: Optional path to database.
 
     Returns:
-        Set of Pokemon names for O(1) lookup, or None if no filtering should be applied.
+        Frozenset of Pokemon names for O(1) lookup, or None if no filtering should be applied.
     """
     if filter_config is None:
         return None
@@ -543,23 +531,21 @@ def get_available_pokemon_set(
         cursor = conn.execute(
             "SELECT pokemon, location_name, encounter_method, encounter_notes, requirement FROM locations"
         )
-        all_locations = fetchall_to_polars(cursor)
-        conn.close()
+        all_locations = fetchall_to_dicts(cursor)
     except Exception:
-        conn.close()
-        return set()
+        return frozenset()
 
-    if all_locations.is_empty():
-        return set()
+    if not all_locations:
+        return frozenset()
 
     # Apply game progress filters
     filtered = apply_location_filters(all_locations, filter_config)
 
-    if filtered.is_empty():
-        return set()
+    if not filtered:
+        return frozenset()
 
     # Get base catchable Pokemon
-    catchable = set(filtered["pokemon"].unique().to_list())
+    catchable = {r["pokemon"] for r in filtered}
 
     # Add all evolutions of catchable Pokemon (respecting level cap)
     available: set[str] = set()
@@ -568,9 +554,10 @@ def get_available_pokemon_set(
         evolutions = get_all_evolutions(pokemon, db_path, level_cap=filter_config.level_cap)
         available.update(evolutions)
 
-    return available
+    return frozenset(available)
 
 
+@st.cache_data
 def get_all_location_names(db_path: Path | None = None) -> list[str]:
     """Get sorted list of unique location names from the locations table.
 
@@ -586,13 +573,12 @@ def get_all_location_names(db_path: Path | None = None) -> list[str]:
         result = conn.execute(
             "SELECT DISTINCT location_name FROM locations WHERE location_name IS NOT NULL ORDER BY location_name"
         ).fetchall()
-        conn.close()
         return [r[0] for r in result if r[0]]
     except Exception:
-        conn.close()
         return []
 
 
+@st.cache_data
 def get_all_pokemon_names_from_locations(db_path: Path | None = None) -> list[str]:
     """Get sorted list of Pokemon names obtainable from catch locations.
 
@@ -631,14 +617,13 @@ def get_all_pokemon_names_from_locations(db_path: Path | None = None) -> list[st
             SELECT DISTINCT name FROM all_evolutions ORDER BY name
             """
         ).fetchall()
-        conn.close()
         return [r[0] for r in result if r[0]]
     except Exception:
-        conn.close()
         return []
 
 
-def search_pokemon_locations(pokemon_name: str, db_path: Path | None = None) -> pl.DataFrame:
+@st.cache_data
+def search_pokemon_locations(pokemon_name: str, db_path: Path | None = None) -> list[dict[str, Any]]:
     """Search for all locations where a Pokemon or its pre-evolutions can be caught.
 
     Automatically includes locations for all pre-evolutions of the given Pokemon.
@@ -650,7 +635,7 @@ def search_pokemon_locations(pokemon_name: str, db_path: Path | None = None) -> 
         db_path: Optional path to database.
 
     Returns:
-        DataFrame with columns: pokemon, location_name, encounter_method,
+        List of dicts with columns: pokemon, location_name, encounter_method,
         encounter_notes, requirement. The pokemon column shows which Pokemon
         actually spawns at that location.
     """
@@ -671,14 +656,13 @@ def search_pokemon_locations(pokemon_name: str, db_path: Path | None = None) -> 
         """  # noqa: S608
 
         cursor = conn.execute(query, all_pokemon)
-        result = fetchall_to_polars(cursor)
-        conn.close()
+        result = fetchall_to_dicts(cursor)
         return result
     except Exception as e:
-        conn.close()
         raise e
 
 
+@st.cache_data
 def get_move_details(move_key: str, db_path: Path | None = None) -> dict[str, str | int | None] | None:
     """Get full details for a move.
 
@@ -701,7 +685,6 @@ def get_move_details(move_key: str, db_path: Path | None = None) -> dict[str, st
             """,
             [move_key],
         ).fetchone()
-        conn.close()
 
         if result:
             return {
@@ -716,10 +699,10 @@ def get_move_details(move_key: str, db_path: Path | None = None) -> dict[str, st
             }
         return None
     except Exception:
-        conn.close()
         return None
 
 
+@st.cache_data
 def get_pokemon_details(pokemon_key: str, db_path: Path | None = None) -> dict[str, str | int | None] | None:
     """Get full stats for a Pokemon.
 
@@ -744,7 +727,6 @@ def get_pokemon_details(pokemon_key: str, db_path: Path | None = None) -> dict[s
             """,
             [pokemon_key],
         ).fetchone()
-        conn.close()
 
         if result:
             return {
@@ -764,24 +746,24 @@ def get_pokemon_details(pokemon_key: str, db_path: Path | None = None) -> dict[s
             }
         return None
     except Exception:
-        conn.close()
         return None
 
 
+@st.cache_data
 def get_pokemon_by_type(
     type_name: str,
-    available_pokemon: set[str] | None = None,
+    available_pokemon: frozenset[str] | None = None,
     db_path: Path | None = None,
-) -> pl.DataFrame:
+) -> list[dict[str, Any]]:
     """Get all Pokemon of a given type.
 
     Args:
         type_name: The type to search for (e.g., "Fire", "Water").
-        available_pokemon: Optional set of Pokemon names to filter by.
+        available_pokemon: Optional frozenset of Pokemon names to filter by.
         db_path: Optional path to database.
 
     Returns:
-        DataFrame with columns: name, type1, type2, bst, pokemon_key
+        List of dicts with columns: name, type1, type2, bst, pokemon_key
         Sorted by bst descending.
     """
     conn = _get_conn(db_path)
@@ -796,20 +778,19 @@ def get_pokemon_by_type(
             """,
             [type_name, type_name],
         )
-        result = fetchall_to_polars(cursor)
-        conn.close()
+        result = fetchall_to_dicts(cursor)
 
         # Filter by available Pokemon if provided
-        if available_pokemon is not None and not result.is_empty():
-            result = result.filter(pl.col("name").is_in(list(available_pokemon)))
+        if available_pokemon is not None and result:
+            result = [r for r in result if r["name"] in available_pokemon]
 
         return result
     except Exception as e:
-        conn.close()
         raise e
 
 
-def get_pokemon_learnset(pokemon_key: str, db_path: Path | None = None) -> pl.DataFrame:
+@st.cache_data
+def get_pokemon_learnset(pokemon_key: str, db_path: Path | None = None) -> list[dict[str, Any]]:
     """Get complete learnset for a Pokemon.
 
     Args:
@@ -817,7 +798,7 @@ def get_pokemon_learnset(pokemon_key: str, db_path: Path | None = None) -> pl.Da
         db_path: Optional path to database.
 
     Returns:
-        DataFrame with columns: move_name, move_type, category, power, learn_method, level
+        List of dicts with columns: move_name, move_type, category, power, learn_method, level
         Sorted by learn_method and level.
     """
     conn = _get_conn(db_path)
@@ -839,9 +820,7 @@ def get_pokemon_learnset(pokemon_key: str, db_path: Path | None = None) -> pl.Da
             """,
             [pokemon_key],
         )
-        result = fetchall_to_polars(cursor)
-        conn.close()
+        result = fetchall_to_dicts(cursor)
         return result
     except Exception as e:
-        conn.close()
         raise e

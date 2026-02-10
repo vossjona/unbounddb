@@ -189,7 +189,7 @@ class TestComputeFilterConfig:
         """Step 0 only includes the first entry's locations."""
         config = compute_filter_config(sample_entries, step=0, difficulty=None)
 
-        assert config.accessible_locations == ["Route 1"]
+        assert config.accessible_locations == ("Route 1",)
         assert config.has_surf is False
         assert config.has_dive is False
         assert config.has_rock_smash is False
@@ -211,7 +211,7 @@ class TestComputeFilterConfig:
         """Step 2 accumulates locations and HMs from entries 0-2."""
         config = compute_filter_config(sample_entries, step=2, difficulty=None)
 
-        assert config.accessible_locations == ["Route 1", "Route 2", "Route 3"]
+        assert config.accessible_locations == ("Route 1", "Route 2", "Route 3")
         assert config.has_surf is True
         assert config.has_dive is False
         assert config.level_cap == 25

@@ -208,7 +208,7 @@ def compute_filter_config(
         has_rock_smash="Rock Smash" in accumulated_hms,
         post_game=is_post_game,
         rod_level=rod_level,
-        accessible_locations=accumulated_locations if accumulated_locations else None,
+        accessible_locations=tuple(accumulated_locations) if accumulated_locations else None,
         level_cap=last_level_cap,
         available_hms=frozenset(accumulated_hms),
     )

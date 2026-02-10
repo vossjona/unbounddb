@@ -40,10 +40,10 @@ async def fetch_tab(
     """
     output_path = output_dir / f"{tab_name}.csv"
 
-    if output_path.exists() and not force:
+    if await asyncio.to_thread(output_path.exists) and not force:
         return output_path
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
 
     url = config.get_export_url(tab_name)
 
@@ -55,7 +55,7 @@ async def fetch_tab(
         response = await client.get(url)
         response.raise_for_status()
 
-        output_path.write_text(response.text, encoding="utf-8")
+        await asyncio.to_thread(output_path.write_text, response.text, encoding="utf-8")
         return output_path
     finally:
         if should_close_client:
@@ -190,10 +190,10 @@ async def fetch_github_file(
 
     output_path = output_dir / filename
 
-    if output_path.exists() and not force:
+    if await asyncio.to_thread(output_path.exists) and not force:
         return output_path
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
 
     should_close_client = client is None
     if client is None:
@@ -203,7 +203,7 @@ async def fetch_github_file(
         response = await client.get(url)
         response.raise_for_status()
 
-        output_path.write_text(response.text, encoding="utf-8")
+        await asyncio.to_thread(output_path.write_text, response.text, encoding="utf-8")
         return output_path
     finally:
         if should_close_client:
@@ -312,7 +312,7 @@ async def fetch_github_directory(
 
     # Create output subdirectory
     local_dir = output_dir / directory
-    local_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(local_dir.mkdir, parents=True, exist_ok=True)
 
     should_close_client = client is None
     if client is None:
@@ -331,13 +331,13 @@ async def fetch_github_directory(
             download_url = file_info["download_url"]
             local_path = local_dir / filename
 
-            if local_path.exists() and not force:
+            if await asyncio.to_thread(local_path.exists) and not force:
                 downloaded_paths.append(local_path)
                 continue
 
             response = await client.get(download_url)
             response.raise_for_status()
-            local_path.write_text(response.text, encoding="utf-8")
+            await asyncio.to_thread(local_path.write_text, response.text, encoding="utf-8")
             downloaded_paths.append(local_path)
 
             # Small delay to avoid rate limiting
@@ -459,10 +459,10 @@ async def fetch_external_file(
     filename = f"{source_name}{extension}"
     output_path = output_dir / filename
 
-    if output_path.exists() and not force:
+    if await asyncio.to_thread(output_path.exists) and not force:
         return output_path
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
 
     should_close_client = client is None
     if client is None:
@@ -472,7 +472,7 @@ async def fetch_external_file(
         response = await client.get(url)
         response.raise_for_status()
 
-        output_path.write_text(response.text, encoding="utf-8")
+        await asyncio.to_thread(output_path.write_text, response.text, encoding="utf-8")
         return output_path
     finally:
         if should_close_client:

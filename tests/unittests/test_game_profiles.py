@@ -3,7 +3,6 @@
 
 from pathlib import Path
 
-import polars as pl
 import pytest
 
 from unbounddb.app import user_database
@@ -109,7 +108,7 @@ class TestLoadProfile:
         assert config.has_dive is False
         assert config.has_rock_smash is False
         assert config.post_game is False
-        assert config.accessible_locations == ["Route 1"]
+        assert config.accessible_locations == ("Route 1",)
         assert config.level_cap == 15
 
     def test_load_profile_at_step_1_has_surf(self, clean_db: Path) -> None:
@@ -121,7 +120,7 @@ class TestLoadProfile:
 
         assert config is not None
         assert config.has_surf is True
-        assert config.accessible_locations == ["Route 1", "Route 2", "Route 3"]
+        assert config.accessible_locations == ("Route 1", "Route 2", "Route 3")
         assert config.level_cap == 22
 
     def test_load_profile_difficult_uses_difficult_cap(self, clean_db: Path) -> None:
@@ -282,36 +281,48 @@ class TestApplyLocationFiltersWithNone:
     """Tests for apply_location_filters with None config."""
 
     def test_apply_location_filters_with_none_returns_unchanged(self) -> None:
-        """Passing None config returns the DataFrame unchanged."""
-        df = pl.DataFrame(
+        """Passing None config returns the list unchanged."""
+        data = [
             {
-                "location_name": ["Route 1", "Deep Sea"],
-                "encounter_method": ["grass", "surfing"],
-                "encounter_notes": ["", "Underwater"],
-                "requirement": ["", "Beat the League"],
-            }
-        )
+                "location_name": "Route 1",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Deep Sea",
+                "encounter_method": "surfing",
+                "encounter_notes": "Underwater",
+                "requirement": "Beat the League",
+            },
+        ]
 
-        result = apply_location_filters(df, None)
+        result = apply_location_filters(data, None)
 
-        # Should return the same DataFrame unchanged
-        assert result.shape == df.shape
-        assert result.equals(df)
+        # Should return the same list unchanged
+        assert len(result) == len(data)
+        assert result == data
 
     def test_apply_location_filters_with_config_filters_data(self) -> None:
         """Passing a config applies filters normally."""
-        df = pl.DataFrame(
+        data = [
             {
-                "location_name": ["Route 1", "Deep Sea"],
-                "encounter_method": ["grass", "surfing"],
-                "encounter_notes": ["", "Underwater"],
-                "requirement": ["", ""],
-            }
-        )
+                "location_name": "Route 1",
+                "encounter_method": "grass",
+                "encounter_notes": "",
+                "requirement": "",
+            },
+            {
+                "location_name": "Deep Sea",
+                "encounter_method": "surfing",
+                "encounter_notes": "Underwater",
+                "requirement": "",
+            },
+        ]
         config = LocationFilterConfig(has_surf=False)
 
-        result = apply_location_filters(df, config)
+        result = apply_location_filters(data, config)
 
         # Surfing location should be filtered out
         assert len(result) == 1
-        assert result["location_name"][0] == "Route 1"
+        assert result[0]["location_name"] == "Route 1"

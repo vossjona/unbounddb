@@ -3,6 +3,7 @@
 
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 
@@ -127,3 +128,21 @@ def fetchall_to_polars(cursor: sqlite3.Cursor) -> pl.DataFrame:
         return pl.DataFrame({col: [] for col in column_names})
 
     return pl.DataFrame(rows, schema=column_names, orient="row")
+
+
+def fetchall_to_dicts(cursor: sqlite3.Cursor) -> list[dict[str, Any]]:
+    """Convert a SQLite cursor result to a list of dictionaries.
+
+    Args:
+        cursor: Executed SQLite cursor with results.
+
+    Returns:
+        List of dicts, one per row, with column names as keys.
+    """
+    if cursor.description is None:
+        return []
+
+    column_names = [desc[0] for desc in cursor.description]
+    rows = cursor.fetchall()
+
+    return [dict(zip(column_names, row, strict=True)) for row in rows]

@@ -5,7 +5,7 @@ from itertools import combinations
 from pathlib import Path
 from typing import Any, TypedDict
 
-import polars as pl
+import streamlit as st
 
 from unbounddb.app.queries import _get_conn
 from unbounddb.utils.type_chart import (
@@ -27,6 +27,7 @@ class EffectivenessResult(TypedDict):
     category: str
 
 
+@st.cache_data
 def get_battle_pokemon_types(battle_id: int, db_path: Path | None = None) -> list[dict[str, Any]]:
     """Get battle's Pokemon with their types.
 
@@ -52,7 +53,6 @@ def get_battle_pokemon_types(battle_id: int, db_path: Path | None = None) -> lis
     """
 
     result = conn.execute(query, [battle_id]).fetchall()
-    conn.close()
 
     return [
         {
@@ -128,7 +128,8 @@ def _score_single_type(atk_type: str, pokemon_list: list[dict[str, Any]]) -> dic
     }
 
 
-def analyze_single_type_offense(battle_id: int, db_path: Path | None = None) -> pl.DataFrame:
+@st.cache_data
+def analyze_single_type_offense(battle_id: int, db_path: Path | None = None) -> list[dict[str, Any]]:
     """Analyze all 18 types ranked by offensive effectiveness against a battle.
 
     Args:
@@ -136,29 +137,18 @@ def analyze_single_type_offense(battle_id: int, db_path: Path | None = None) -> 
         db_path: Optional path to database.
 
     Returns:
-        DataFrame with columns: type, 4x_count, 2x_count, neutral_count,
+        List of dicts with keys: type, 4x_count, 2x_count, neutral_count,
         resisted_count, immune_count, score
         Sorted by score DESC
     """
     pokemon_list = _build_battle_pokemon_types(battle_id, db_path)
 
     if not pokemon_list:
-        return pl.DataFrame(
-            schema={
-                "type": pl.String,
-                "4x_count": pl.Int64,
-                "2x_count": pl.Int64,
-                "neutral_count": pl.Int64,
-                "resisted_count": pl.Int64,
-                "immune_count": pl.Int64,
-                "score": pl.Int64,
-            }
-        )
+        return []
 
     results = [_score_single_type(atk_type, pokemon_list) for atk_type in TYPES]
 
-    df = pl.DataFrame(results)
-    return df.sort("score", descending=True)
+    return sorted(results, key=lambda r: r["score"], reverse=True)
 
 
 def _score_type_combo(
@@ -213,7 +203,8 @@ def _score_type_combo(
     }
 
 
-def analyze_four_type_coverage(battle_id: int, db_path: Path | None = None, top_n: int = 50) -> pl.DataFrame:
+@st.cache_data
+def analyze_four_type_coverage(battle_id: int, db_path: Path | None = None, top_n: int = 50) -> list[dict[str, Any]]:
     """Find best 4-type combinations for coverage. Evaluates all 3060 combos.
 
     Args:
@@ -222,21 +213,13 @@ def analyze_four_type_coverage(battle_id: int, db_path: Path | None = None, top_
         top_n: Number of top results to return.
 
     Returns:
-        DataFrame with columns: types, covered_count, total_pokemon, coverage_pct, score
+        List of dicts with keys: types, covered_count, total_pokemon, coverage_pct, score
         Sorted by score DESC
     """
     pokemon_list = _build_battle_pokemon_types(battle_id, db_path)
 
     if not pokemon_list:
-        return pl.DataFrame(
-            schema={
-                "types": pl.String,
-                "covered_count": pl.Int64,
-                "total_pokemon": pl.Int64,
-                "coverage_pct": pl.Float64,
-                "score": pl.Int64,
-            }
-        )
+        return []
 
     # Pre-compute effectiveness for all (type, pokemon) pairs
     effectiveness_cache: dict[tuple[str, str], float] = {}
@@ -252,15 +235,17 @@ def analyze_four_type_coverage(battle_id: int, db_path: Path | None = None, top_
     # Sort and return top N
     results.sort(key=lambda x: x["score"], reverse=True)
 
-    # Remove internal tuple before creating DataFrame
+    # Remove internal tuple before returning
     for r in results:
         del r["types_tuple"]
 
-    df = pl.DataFrame(results[:top_n])
-    return df
+    return results[:top_n]
 
 
-def get_type_coverage_detail(battle_id: int, atk_types: list[str], db_path: Path | None = None) -> pl.DataFrame:
+@st.cache_data
+def get_type_coverage_detail(
+    battle_id: int, atk_types: tuple[str, ...], db_path: Path | None = None
+) -> list[dict[str, Any]]:
     """Get per-Pokemon breakdown for attacking types.
 
     Args:
@@ -269,23 +254,13 @@ def get_type_coverage_detail(battle_id: int, atk_types: list[str], db_path: Path
         db_path: Optional path to database.
 
     Returns:
-        DataFrame with columns: pokemon_key, slot, type1, type2,
+        List of dicts with keys: pokemon_key, slot, type1, type2,
         best_type, best_effectiveness, is_covered
     """
     pokemon_list = _build_battle_pokemon_types(battle_id, db_path)
 
     if not pokemon_list:
-        return pl.DataFrame(
-            schema={
-                "pokemon_key": pl.String,
-                "slot": pl.Int64,
-                "type1": pl.String,
-                "type2": pl.String,
-                "best_type": pl.String,
-                "best_effectiveness": pl.Float64,
-                "is_covered": pl.Boolean,
-            }
-        )
+        return []
 
     results: list[dict[str, Any]] = []
 
@@ -311,11 +286,11 @@ def get_type_coverage_detail(battle_id: int, atk_types: list[str], db_path: Path
             }
         )
 
-    df = pl.DataFrame(results)
-    return df.sort("slot")
+    return sorted(results, key=lambda r: r["slot"])
 
 
-def get_single_type_detail(battle_id: int, atk_type: str, db_path: Path | None = None) -> pl.DataFrame:
+@st.cache_data
+def get_single_type_detail(battle_id: int, atk_type: str, db_path: Path | None = None) -> list[dict[str, Any]]:
     """Get per-Pokemon breakdown for a single attacking type.
 
     Args:
@@ -324,22 +299,13 @@ def get_single_type_detail(battle_id: int, atk_type: str, db_path: Path | None =
         db_path: Optional path to database.
 
     Returns:
-        DataFrame with columns: pokemon_key, slot, type1, type2,
+        List of dicts with keys: pokemon_key, slot, type1, type2,
         effectiveness, category
     """
     pokemon_list = _build_battle_pokemon_types(battle_id, db_path)
 
     if not pokemon_list:
-        return pl.DataFrame(
-            schema={
-                "pokemon_key": pl.String,
-                "slot": pl.Int64,
-                "type1": pl.String,
-                "type2": pl.String,
-                "effectiveness": pl.Float64,
-                "category": pl.String,
-            }
-        )
+        return []
 
     results: list[dict[str, Any]] = []
 
@@ -357,5 +323,4 @@ def get_single_type_detail(battle_id: int, atk_type: str, db_path: Path | None =
             }
         )
 
-    df = pl.DataFrame(results)
-    return df.sort("slot")
+    return sorted(results, key=lambda r: r["slot"])

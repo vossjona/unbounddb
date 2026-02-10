@@ -102,8 +102,8 @@ def render_pokemon_with_popup(pokemon_name: str, pokemon_key: str | None = None)
 
 def render_type_badge(
     type_name: str,
-    show_pokemon_dialog_callback: Callable[[str, set[str] | None], None] | None = None,
-    available_pokemon: set[str] | None = None,
+    show_pokemon_dialog_callback: Callable[[str, frozenset[str] | None], None] | None = None,
+    available_pokemon: frozenset[str] | None = None,
 ) -> None:
     """Render type as a clickable button that can trigger a Pokemon list dialog.
 
