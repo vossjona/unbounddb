@@ -69,6 +69,8 @@ st.set_page_config(
     layout="wide",
 )
 
+st.write("DIAG 3: main.py module-level code executing")
+
 
 def _check_password() -> bool:
     """Verify user password via st.secrets. Skips if no secret configured."""
