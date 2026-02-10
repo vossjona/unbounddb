@@ -6,8 +6,8 @@ from typing import Any
 
 import streamlit as st
 
+from unbounddb.app.db import fetchall_to_dicts
 from unbounddb.app.queries import _get_conn
-from unbounddb.build.database import fetchall_to_dicts
 
 
 @st.cache_data

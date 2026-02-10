@@ -91,22 +91,12 @@ if not _check_password():
 
 st.title("Pokemon Unbound Database")
 
-# Build database on first load if it doesn't exist
+# Require pre-built database (committed to the repo)
 if not settings.db_path.exists():
-    st.info("Building database from source files. This may take a moment on first load...")
-    build_log = st.empty()
-    try:
-        from unbounddb.build.pipeline import run_github_build_pipeline
-
-        def _log_build_progress(msg: str) -> None:
-            build_log.text(msg)
-
-        run_github_build_pipeline(verbose_callback=_log_build_progress)
-        build_log.empty()
-        st.rerun()
-    except Exception as e:
-        st.error(f"Failed to build database: {e}")
-        st.stop()
+    st.error(
+        f"Database not found at {settings.db_path}. Run 'unbounddb build --github' locally and commit the database."
+    )
+    st.stop()
 
 # Load available options
 try:

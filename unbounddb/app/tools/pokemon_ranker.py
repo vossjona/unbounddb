@@ -6,11 +6,11 @@ from typing import Any
 
 import streamlit as st
 
+from unbounddb.app.db import fetchall_to_dicts
 from unbounddb.app.queries import _get_conn
 from unbounddb.app.tools.defensive_suggester import get_battle_move_types
 from unbounddb.app.tools.offensive_suggester import analyze_single_type_offense, get_battle_pokemon_types
 from unbounddb.app.tools.phys_spec_analyzer import analyze_battle_defensive_profile
-from unbounddb.build.database import fetchall_to_dicts
 from unbounddb.utils.type_chart import (
     IMMUNITY_VALUE,
     RESISTANCE_THRESHOLD,

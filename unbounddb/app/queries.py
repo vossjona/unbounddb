@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import streamlit as st
 
-from unbounddb.build.database import fetchall_to_dicts, get_connection
+from unbounddb.app.db import fetchall_to_dicts, get_connection
 from unbounddb.build.normalize import slugify
 from unbounddb.settings import settings
 
