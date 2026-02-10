@@ -21,7 +21,7 @@ def get_connection(db_path: Path) -> sqlite3.Connection:
     if not db_path.exists():
         raise FileNotFoundError(f"Database not found: {db_path}")
 
-    return sqlite3.connect(str(db_path))
+    return sqlite3.connect(str(db_path), check_same_thread=False)
 
 
 def fetchall_to_dicts(cursor: sqlite3.Cursor) -> list[dict[str, Any]]:
