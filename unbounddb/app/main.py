@@ -923,9 +923,6 @@ with tab3:
     else:
         st.header(f"Catch Locations for {selected_pokemon}")
 
-        # Pokemon info popup for the searched Pokemon
-        render_pokemon_with_popup(f":material/info: View {selected_pokemon} Stats", selected_pokemon)
-
         # Query locations for selected Pokemon
         location_rows = search_pokemon_locations(selected_pokemon)
 
@@ -969,15 +966,6 @@ with tab3:
                         )
 
                 st.subheader(f"Found in {len(filtered_rows)} location(s)")
-
-                # Show info popups for unique catchable Pokemon (pre-evolutions)
-                unique_pokemon = list({r["pokemon"] for r in filtered_rows})
-                if len(unique_pokemon) > 1:
-                    st.caption("Click to view stats for catchable forms:")
-                    pokemon_cols = st.columns(min(len(unique_pokemon), 4))
-                    for i, pkmn in enumerate(unique_pokemon):
-                        with pokemon_cols[i % 4]:
-                            render_pokemon_with_popup(pkmn)
 
                 st.divider()
 
