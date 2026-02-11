@@ -1,7 +1,7 @@
 # ABOUTME: Unit tests for Pokemon ranker scoring functions.
 # ABOUTME: Tests defense, offense, stat, BST scoring, and coverage logic for battle matchups.
 
-from typing import Any
+from typing import Any, ClassVar
 from unittest.mock import patch
 
 from unbounddb.app.tools.pokemon_ranker import (
@@ -10,6 +10,7 @@ from unbounddb.app.tools.pokemon_ranker import (
     calculate_defense_score,
     calculate_offense_score,
     calculate_stat_score,
+    get_all_learnable_offensive_moves,
     rank_pokemon_for_battle,
 )
 
@@ -1233,3 +1234,135 @@ class TestRankPokemonFiltersByAvailableSet:
             # Empty available set should return empty list
             result = rank_pokemon_for_battle(battle_id=1, top_n=0, available_pokemon=frozenset())
             assert result == []
+
+
+class TestLevelCapFiltering:
+    """Tests for level_cap filtering in get_all_learnable_offensive_moves."""
+
+    MOCK_MOVES: ClassVar[list[dict[str, Any]]] = [
+        {
+            "pokemon_key": "houndoom",
+            "move_key": "ember",
+            "learn_method": "level",
+            "level": 1,
+            "move_name": "Ember",
+            "move_type": "Fire",
+            "category": "Special",
+            "power": 40,
+        },
+        {
+            "pokemon_key": "houndoom",
+            "move_key": "flamethrower",
+            "learn_method": "level",
+            "level": 44,
+            "move_name": "Flamethrower",
+            "move_type": "Fire",
+            "category": "Special",
+            "power": 90,
+        },
+        {
+            "pokemon_key": "houndoom",
+            "move_key": "inferno",
+            "learn_method": "level",
+            "level": 63,
+            "move_name": "Inferno",
+            "move_type": "Fire",
+            "category": "Special",
+            "power": 100,
+        },
+        {
+            "pokemon_key": "houndoom",
+            "move_key": "dark_pulse",
+            "learn_method": "tm",
+            "level": None,
+            "move_name": "Dark Pulse",
+            "move_type": "Dark",
+            "category": "Special",
+            "power": 80,
+        },
+    ]
+
+    def test_level_cap_excludes_moves_above_cap(self) -> None:
+        """Level-up moves above the level cap should be excluded."""
+        with patch(
+            "unbounddb.app.tools.pokemon_ranker._get_conn",
+        ) as mock_conn:
+            mock_cursor = mock_conn.return_value.execute.return_value
+            mock_cursor.fetchall.return_value = []
+            mock_cursor.description = []
+
+            with patch(
+                "unbounddb.app.tools.pokemon_ranker.fetchall_to_dicts",
+                return_value=list(self.MOCK_MOVES),
+            ):
+                result = get_all_learnable_offensive_moves(level_cap=40)
+
+        move_keys = {m["move_key"] for m in result}
+        # Ember (level 1) and Dark Pulse (TM) should remain
+        assert "ember" in move_keys
+        assert "dark_pulse" in move_keys
+        # Flamethrower (44) and Inferno (63) are above level cap 40
+        assert "flamethrower" not in move_keys
+        assert "inferno" not in move_keys
+
+    def test_level_cap_includes_moves_at_cap(self) -> None:
+        """Level-up moves exactly at the level cap should be included."""
+        with patch(
+            "unbounddb.app.tools.pokemon_ranker._get_conn",
+        ) as mock_conn:
+            mock_cursor = mock_conn.return_value.execute.return_value
+            mock_cursor.fetchall.return_value = []
+            mock_cursor.description = []
+
+            with patch(
+                "unbounddb.app.tools.pokemon_ranker.fetchall_to_dicts",
+                return_value=list(self.MOCK_MOVES),
+            ):
+                result = get_all_learnable_offensive_moves(level_cap=44)
+
+        move_keys = {m["move_key"] for m in result}
+        # Flamethrower (44) is exactly at cap, should be included
+        assert "flamethrower" in move_keys
+        # Inferno (63) still above cap
+        assert "inferno" not in move_keys
+
+    def test_tm_moves_not_affected_by_level_cap(self) -> None:
+        """TM moves should not be filtered by level cap."""
+        with patch(
+            "unbounddb.app.tools.pokemon_ranker._get_conn",
+        ) as mock_conn:
+            mock_cursor = mock_conn.return_value.execute.return_value
+            mock_cursor.fetchall.return_value = []
+            mock_cursor.description = []
+
+            with patch(
+                "unbounddb.app.tools.pokemon_ranker.fetchall_to_dicts",
+                return_value=list(self.MOCK_MOVES),
+            ):
+                result = get_all_learnable_offensive_moves(level_cap=1)
+
+        move_keys = {m["move_key"] for m in result}
+        # Even with level cap 1, TM moves should remain
+        assert "dark_pulse" in move_keys
+        # Only Ember (level 1) should survive for level-up moves
+        assert "ember" in move_keys
+        assert "flamethrower" not in move_keys
+        assert "inferno" not in move_keys
+
+    def test_none_level_cap_includes_all_moves(self) -> None:
+        """When level_cap is None, all level-up moves should be included."""
+        with patch(
+            "unbounddb.app.tools.pokemon_ranker._get_conn",
+        ) as mock_conn:
+            mock_cursor = mock_conn.return_value.execute.return_value
+            mock_cursor.fetchall.return_value = []
+            mock_cursor.description = []
+
+            with patch(
+                "unbounddb.app.tools.pokemon_ranker.fetchall_to_dicts",
+                return_value=list(self.MOCK_MOVES),
+            ):
+                result = get_all_learnable_offensive_moves(level_cap=None)
+
+        move_keys = {m["move_key"] for m in result}
+        assert move_keys == {"ember", "flamethrower", "inferno", "dark_pulse"}

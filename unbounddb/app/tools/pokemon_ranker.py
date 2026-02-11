@@ -53,18 +53,24 @@ def get_all_pokemon_with_stats(db_path: Path | None = None) -> list[dict[str, An
 def get_all_learnable_offensive_moves(
     db_path: Path | None = None,
     available_tm_keys: frozenset[str] | None = None,
+    level_cap: int | None = None,
 ) -> list[dict[str, Any]]:
     """Batch query all offensive moves that Pokemon can learn.
 
     Excludes tutor moves since they have no structured location data
     for availability checking. Optionally filters TM moves to only
     include those whose TMs are obtainable at current game progress.
+    Optionally filters level-up moves to only include those learnable
+    at or below the current level cap.
 
     Args:
         db_path: Optional path to database.
         available_tm_keys: Optional set of move keys for obtainable TMs.
             If provided, TM moves not in this set are excluded.
             If None, all TM moves are included.
+        level_cap: Optional level cap for filtering level-up moves.
+            If provided, level-up moves with level > cap are excluded.
+            If None, all level-up moves are included.
 
     Returns:
         List of dicts with keys:
@@ -89,6 +95,10 @@ def get_all_learnable_offensive_moves(
     # Filter out TM moves that aren't obtainable at current progression
     if available_tm_keys is not None and result:
         result = [r for r in result if r["learn_method"] != "tm" or r["move_key"] in available_tm_keys]
+
+    # Filter out level-up moves above the level cap
+    if level_cap is not None and result:
+        result = [r for r in result if r["learn_method"] != "level" or (r["level"] or 0) <= level_cap]
 
     return result
 
@@ -480,6 +490,7 @@ def rank_pokemon_for_battle(
     top_n: int = 50,
     available_pokemon: frozenset[str] | None = None,
     available_tm_keys: frozenset[str] | None = None,
+    level_cap: int | None = None,
 ) -> list[dict[str, Any]]:
     """Rank all Pokemon for a battle matchup using composite scoring.
 
@@ -494,6 +505,8 @@ def rank_pokemon_for_battle(
             only Pokemon in this set will be included in the rankings.
         available_tm_keys: Optional set of move keys for obtainable TMs.
             If provided, TM moves not in this set are excluded from scoring.
+        level_cap: Optional level cap for filtering level-up moves.
+            If provided, level-up moves with level > cap are excluded.
 
     Returns:
         List of dicts with keys:
@@ -513,7 +526,7 @@ def rank_pokemon_for_battle(
 
     # Get all Pokemon and moves
     all_pokemon = get_all_pokemon_with_stats(db_path)
-    all_moves = get_all_learnable_offensive_moves(db_path, available_tm_keys=available_tm_keys)
+    all_moves = get_all_learnable_offensive_moves(db_path, available_tm_keys=available_tm_keys, level_cap=level_cap)
 
     # Filter by available Pokemon if specified
     if available_pokemon is not None:
@@ -612,6 +625,7 @@ def get_pokemon_moves_detail(
     battle_id: int,
     db_path: Path | None = None,
     available_tm_keys: frozenset[str] | None = None,
+    level_cap: int | None = None,
 ) -> list[dict[str, Any]]:
     """Get detailed good moves for a specific Pokemon against a battle.
 
@@ -620,6 +634,7 @@ def get_pokemon_moves_detail(
         battle_id: ID of the battle to analyze.
         db_path: Optional path to database.
         available_tm_keys: Optional set of move keys for obtainable TMs.
+        level_cap: Optional level cap for filtering level-up moves.
 
     Returns:
         List of dicts with move details:
@@ -641,7 +656,7 @@ def get_pokemon_moves_detail(
     battle_pokemon = get_battle_pokemon_types(battle_id, db_path)
 
     # Get Pokemon's learnable moves
-    all_moves = get_all_learnable_offensive_moves(db_path, available_tm_keys=available_tm_keys)
+    all_moves = get_all_learnable_offensive_moves(db_path, available_tm_keys=available_tm_keys, level_cap=level_cap)
     pokemon_moves = [m for m in all_moves if m["pokemon_key"] == pokemon_key]
 
     if not pokemon_moves:
@@ -665,6 +680,7 @@ def get_coverage_detail(
     battle_id: int,
     db_path: Path | None = None,
     available_tm_keys: frozenset[str] | None = None,
+    level_cap: int | None = None,
 ) -> list[dict[str, Any]]:
     """Get detailed coverage breakdown for a Pokemon against battle's team.
 
@@ -673,6 +689,7 @@ def get_coverage_detail(
         battle_id: ID of the battle to analyze.
         db_path: Optional path to database.
         available_tm_keys: Optional set of move keys for obtainable TMs.
+        level_cap: Optional level cap for filtering level-up moves.
 
     Returns:
         List of dicts with coverage details per battle Pokemon:
@@ -685,7 +702,7 @@ def get_coverage_detail(
         return []
 
     # Get Pokemon's learnable moves
-    all_moves = get_all_learnable_offensive_moves(db_path, available_tm_keys=available_tm_keys)
+    all_moves = get_all_learnable_offensive_moves(db_path, available_tm_keys=available_tm_keys, level_cap=level_cap)
     pokemon_moves = [m for m in all_moves if m["pokemon_key"] == pokemon_key]
 
     if not pokemon_moves:

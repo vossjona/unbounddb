@@ -735,13 +735,15 @@ with tab2:
                     available_pokemon = get_available_pokemon_set(global_filter_config)
                     available_tm_keys = get_available_tm_move_keys(global_filter_config)
 
-                    # Get rankings - filter by available Pokemon and TMs
+                    # Get rankings - filter by available Pokemon, TMs, and level cap
+                    level_cap = global_filter_config.level_cap if global_filter_config else None
                     limit = 0 if show_all_pokemon else 50
                     rankings = rank_pokemon_for_battle(
                         battle_id,
                         top_n=limit,
                         available_pokemon=available_pokemon,
                         available_tm_keys=available_tm_keys,
+                        level_cap=level_cap,
                     )
 
                     if not rankings:
@@ -823,7 +825,10 @@ with tab2:
 
                                 # Coverage breakdown
                                 coverage_detail = get_coverage_detail(
-                                    row["pokemon_key"], battle_id, available_tm_keys=available_tm_keys
+                                    row["pokemon_key"],
+                                    battle_id,
+                                    available_tm_keys=available_tm_keys,
+                                    level_cap=level_cap,
                                 )
                                 if coverage_detail:
                                     covered_count = sum(1 for c in coverage_detail if c["is_covered"])
@@ -845,7 +850,10 @@ with tab2:
 
                                 # Recommended moves detail
                                 good_moves = get_pokemon_moves_detail(
-                                    row["pokemon_key"], battle_id, available_tm_keys=available_tm_keys
+                                    row["pokemon_key"],
+                                    battle_id,
+                                    available_tm_keys=available_tm_keys,
+                                    level_cap=level_cap,
                                 )
                                 if good_moves:
                                     st.markdown("**Recommended Moves:**")
