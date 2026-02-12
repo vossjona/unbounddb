@@ -13,6 +13,7 @@ from unbounddb.settings import settings
 
 if TYPE_CHECKING:
     from unbounddb.app.location_filters import LocationFilterConfig
+    from unbounddb.app.move_search_filters import MoveSearchFilters
 
 
 @st.cache_resource
@@ -824,3 +825,164 @@ def get_pokemon_learnset(pokemon_key: str, db_path: Path | None = None) -> list[
         return result
     except Exception as e:
         raise e
+
+
+def _build_move_conditions(
+    filters: "MoveSearchFilters",
+    conditions: list[str],
+    params: list[Any],
+) -> None:
+    """Append move-level WHERE clauses for type, category, stats, and flags."""
+    if filters.move_types:
+        placeholders = ", ".join(["?" for _ in filters.move_types])
+        conditions.append(f"m.type IN ({placeholders})")
+        params.extend(filters.move_types)
+
+    if filters.categories:
+        placeholders = ", ".join(["?" for _ in filters.categories])
+        conditions.append(f"m.category IN ({placeholders})")
+        params.extend(filters.categories)
+
+    # Column names are hardcoded constants, safe for f-string
+    for col, min_val, max_val in [
+        ("power", filters.power_min, filters.power_max),
+        ("accuracy", filters.accuracy_min, filters.accuracy_max),
+        ("priority", filters.priority_min, filters.priority_max),
+        ("pp", filters.pp_min, filters.pp_max),
+    ]:
+        if min_val is not None:
+            conditions.append(f"m.{col} >= ?")
+            params.append(min_val)
+        if max_val is not None:
+            conditions.append(f"m.{col} <= ?")
+            params.append(max_val)
+
+    for flag in (
+        "makes_contact",
+        "is_sound_move",
+        "is_punch_move",
+        "is_bite_move",
+        "is_pulse_move",
+        "has_secondary_effect",
+    ):
+        value = getattr(filters, flag)
+        if value is not None:
+            conditions.append(f"m.{flag} = ?")
+            params.append(1 if value else 0)
+
+
+def _build_pokemon_conditions(
+    filters: "MoveSearchFilters",
+    conditions: list[str],
+    params: list[Any],
+) -> None:
+    """Append Pokemon, learn-method, and stat WHERE clauses."""
+    if filters.learn_methods:
+        placeholders = ", ".join(["?" for _ in filters.learn_methods])
+        conditions.append(f"pm.learn_method IN ({placeholders})")
+        params.extend(filters.learn_methods)
+
+    if filters.max_learn_level is not None:
+        conditions.append("(pm.learn_method != 'level' OR pm.level <= ?)")
+        params.append(filters.max_learn_level)
+
+    if filters.stab_only:
+        conditions.append("(m.type = p.type1 OR m.type = p.type2)")
+
+    # Column names are hardcoded constants, safe for f-string
+    stat_map = {
+        "hp": filters.min_hp,
+        "attack": filters.min_attack,
+        "defense": filters.min_defense,
+        "sp_attack": filters.min_sp_attack,
+        "sp_defense": filters.min_sp_defense,
+        "speed": filters.min_speed,
+        "bst": filters.min_bst,
+    }
+    for col, min_val in stat_map.items():
+        if min_val is not None:
+            conditions.append(f"p.{col} >= ?")
+            params.append(min_val)
+
+
+def _build_progress_conditions(
+    filters: "MoveSearchFilters",
+    conditions: list[str],
+    params: list[Any],
+) -> bool:
+    """Append game-progress WHERE clauses. Returns False if query should return empty."""
+    if filters.available_pokemon is not None:
+        if not filters.available_pokemon:
+            return False
+        placeholders = ", ".join(["?" for _ in filters.available_pokemon])
+        conditions.append(f"p.name IN ({placeholders})")
+        params.extend(sorted(filters.available_pokemon))
+
+    if filters.available_tm_keys is not None:
+        if not filters.available_tm_keys:
+            conditions.append("pm.learn_method != 'tm'")
+        else:
+            placeholders = ", ".join(["?" for _ in filters.available_tm_keys])
+            conditions.append(f"(pm.learn_method != 'tm' OR pm.move_key IN ({placeholders}))")
+            params.extend(sorted(filters.available_tm_keys))
+
+    return True
+
+
+_MOVE_SEARCH_BASE_QUERY = """
+    SELECT
+        p.name AS pokemon_name, p.pokemon_key,
+        p.type1 AS pokemon_type1, p.type2 AS pokemon_type2,
+        p.hp, p.attack, p.defense, p.sp_attack, p.sp_defense, p.speed, p.bst,
+        p.ability1, p.ability2, p.hidden_ability,
+        m.name AS move_name, m.move_key, m.type AS move_type,
+        m.category, m.power, m.accuracy, m.pp, m.priority,
+        m.has_secondary_effect, m.makes_contact,
+        m.is_sound_move, m.is_punch_move, m.is_bite_move, m.is_pulse_move,
+        pm.learn_method, pm.level,
+        CASE WHEN (m.type = p.type1 OR m.type = p.type2) THEN 1 ELSE 0 END AS is_stab
+    FROM pokemon p
+    JOIN pokemon_moves pm ON p.pokemon_key = pm.pokemon_key
+    JOIN moves m ON pm.move_key = m.move_key
+"""
+
+
+@st.cache_data
+def search_moves_advanced(
+    filters: "MoveSearchFilters",
+    db_path: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Search Pokemon-move combinations with advanced multi-criteria filters.
+
+    Joins pokemon, pokemon_moves, and moves tables with dynamic WHERE clauses
+    built from the filter parameters. Computes STAB indicator in SQL.
+
+    Args:
+        filters: Frozen dataclass with all search filter parameters.
+        db_path: Optional path to database.
+
+    Returns:
+        List of dicts with Pokemon, move, and learn-method details per row.
+    """
+    conn = _get_conn(db_path)
+
+    conditions: list[str] = []
+    params: list[Any] = []
+
+    _build_move_conditions(filters, conditions, params)
+    _build_pokemon_conditions(filters, conditions, params)
+    if not _build_progress_conditions(filters, conditions, params):
+        return []
+
+    query = _MOVE_SEARCH_BASE_QUERY
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY p.bst DESC, p.name ASC, m.power DESC"
+
+    cursor = conn.execute(query, params)
+    results = fetchall_to_dicts(cursor)
+
+    for row in results:
+        row["is_stab"] = bool(row["is_stab"])
+
+    return results

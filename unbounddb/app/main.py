@@ -20,6 +20,7 @@ from unbounddb.app.game_progress_persistence import (
     set_active_profile,
 )
 from unbounddb.app.location_filters import LocationFilterConfig, apply_location_filters
+from unbounddb.app.move_search import render_move_search_tab
 from unbounddb.app.queries import (
     get_all_pokemon_names_from_locations,
     get_available_pokemon_set,
@@ -276,7 +277,7 @@ else:
     global_filter_config = None
 
 # Main content area - 3 tabs with inline controls
-tab1, tab2, tab3 = st.tabs(["Browse", "Battle Matchups", "Pokemon Locations"])
+tab1, tab2, tab3, tab4 = st.tabs(["Browse", "Battle Matchups", "Pokemon Locations", "Move Search"])
 
 # Tab 1: Browse Tables
 with tab1:
@@ -985,3 +986,7 @@ with tab3:
                     )
 
                 st.dataframe(table_data, width="stretch", hide_index=True)
+
+# Tab 4: Move Search
+with tab4:
+    render_move_search_tab(global_filter_config)
