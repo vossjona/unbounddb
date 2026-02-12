@@ -832,7 +832,12 @@ def _build_move_conditions(
     conditions: list[str],
     params: list[Any],
 ) -> None:
-    """Append move-level WHERE clauses for type, category, stats, and flags."""
+    """Append move-level WHERE clauses for name, type, category, stats, and flags."""
+    if filters.move_names:
+        placeholders = ", ".join(["?" for _ in filters.move_names])
+        conditions.append(f"m.name IN ({placeholders})")
+        params.extend(filters.move_names)
+
     if filters.move_types:
         placeholders = ", ".join(["?" for _ in filters.move_types])
         conditions.append(f"m.type IN ({placeholders})")

@@ -212,6 +212,22 @@ class TestSearchMovesAdvancedMoveFilters:
         assert len(results) == 1
         assert results[0]["move_name"] == "Thunder Punch"
 
+    def test_filter_by_move_name(self, move_search_db: Path) -> None:
+        results = search_moves_advanced(MoveSearchFilters(move_names=("Shadow Ball",)), db_path=move_search_db)
+        assert len(results) == 1
+        assert results[0]["move_name"] == "Shadow Ball"
+
+    def test_filter_by_multiple_move_names(self, move_search_db: Path) -> None:
+        results = search_moves_advanced(
+            MoveSearchFilters(move_names=("Shadow Ball", "Psychic")), db_path=move_search_db
+        )
+        assert len(results) == 2
+        assert {r["move_name"] for r in results} == {"Shadow Ball", "Psychic"}
+
+    def test_empty_move_names_means_no_filter(self, move_search_db: Path) -> None:
+        results = search_moves_advanced(MoveSearchFilters(move_names=()), db_path=move_search_db)
+        assert len(results) == 5
+
     def test_empty_types_tuple_means_no_filter(self, move_search_db: Path) -> None:
         results = search_moves_advanced(MoveSearchFilters(move_types=()), db_path=move_search_db)
         assert len(results) == 5

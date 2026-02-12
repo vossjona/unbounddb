@@ -9,6 +9,7 @@ class MoveSearchFilters:
     """Filter parameters for the Advanced Move Search query."""
 
     # Move filters
+    move_names: tuple[str, ...] = ()
     move_types: tuple[str, ...] = ()
     categories: tuple[str, ...] = ()
     power_min: int | None = None

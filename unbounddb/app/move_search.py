@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import streamlit as st
 
 from unbounddb.app.move_search_filters import MoveSearchFilters
-from unbounddb.app.queries import get_available_types, search_moves_advanced
+from unbounddb.app.queries import get_available_moves, get_available_types, search_moves_advanced
 
 if TYPE_CHECKING:
     from unbounddb.app.location_filters import LocationFilterConfig
@@ -85,6 +85,7 @@ def _build_filters_from_widgets(
         available_tm_keys = get_available_tm_move_keys(filter_config)
 
     return MoveSearchFilters(
+        move_names=tuple(st.session_state.get("ms_move_names", [])),
         move_types=tuple(st.session_state.get("ms_move_types", [])),
         categories=tuple(categories),
         power_min=power_min,
@@ -118,6 +119,9 @@ def _build_filters_from_widgets(
 
 def _render_move_filters() -> None:
     """Render the move filter controls."""
+    available_moves = get_available_moves()
+    st.multiselect("Move Name", options=available_moves, key="ms_move_names")
+
     available_types = get_available_types()
     st.multiselect("Move Type", options=available_types, key="ms_move_types")
 
