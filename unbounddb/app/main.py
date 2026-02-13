@@ -3,6 +3,7 @@ ABOUTME: Provides UI for browsing tables, battle matchups, and Pokemon locations
 
 import streamlit as st
 
+from unbounddb.app.browser_storage import hydrate_db_from_browser, sync_profile_to_browser
 from unbounddb.app.components import (
     render_pokemon_with_popup,
 )
@@ -114,6 +115,12 @@ ROD_LEVEL_OPTIONS = ["Super Rod", "Good Rod", "Old Rod", "None"]
 _progression_entries = load_progression()
 _progression_labels = get_dropdown_labels(_progression_entries)
 
+# Restore profiles from browser localStorage on cold start (DB empty after restart)
+if hydrate_db_from_browser():
+    get_all_profile_names.clear()
+    get_active_profile_name.clear()
+    load_profile.clear()
+
 # Profile selector options: dynamic from database + "None (ignore filters)"
 try:
     profile_names = get_all_profile_names()
@@ -168,6 +175,7 @@ def _save_difficulty() -> None:
     difficulty = st.session_state.get("def_difficulty")
     difficulty_to_save = difficulty if difficulty != "Any" else None
     _db_update_profile(active_profile, difficulty=difficulty_to_save)
+    sync_profile_to_browser(active_profile)
 
 
 # Get active profile name

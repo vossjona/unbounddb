@@ -3,6 +3,11 @@
 
 import streamlit as st
 
+from unbounddb.app.browser_storage import (
+    remove_profile_from_browser,
+    sync_all_profiles_to_browser,
+    sync_profile_to_browser,
+)
 from unbounddb.app.location_filters import LocationFilterConfig
 from unbounddb.app.user_database import (
     create_profile as _db_create_profile,
@@ -56,6 +61,7 @@ def create_new_profile(name: str) -> bool:
     result = _db_create_profile(name)
     if result:
         get_all_profile_names.clear()
+        sync_profile_to_browser(name)
     return result
 
 
@@ -73,6 +79,7 @@ def delete_profile_by_name(name: str) -> bool:
         get_all_profile_names.clear()
         get_active_profile_name.clear()
         load_profile.clear()
+        remove_profile_from_browser(name)
     return result
 
 
@@ -130,6 +137,7 @@ def save_profile_progress(
         difficulty=difficulty,
     )
     load_profile.clear()
+    sync_profile_to_browser(name)
 
 
 @st.cache_data
@@ -150,3 +158,4 @@ def set_active_profile(name: str | None) -> None:
     """
     _db_set_active_profile(name)
     get_active_profile_name.clear()
+    sync_all_profiles_to_browser()
